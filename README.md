@@ -13,29 +13,35 @@ A single-file HTML playground for Chrome's built-in on-device AI APIs (Gemini Na
 
 ## Download and open
 
-### Option 1 — clone with git
+### Option 1 — copy/paste (easiest, no git, no download)
 
-```bash
-git clone https://github.com/jhpacker/nanochat.git
-```
+1. Open the raw HTML: https://raw.githubusercontent.com/jhpacker/nanochat/main/index.html
+2. Select all (`Cmd/Ctrl+A`) and copy (`Cmd/Ctrl+C`)
+3. Paste into any text editor and save as `nanochat.html` anywhere on your machine
+4. Double-click the file to open it in Chrome
 
 ### Option 2 — download as ZIP
 
 1. Go to https://github.com/jhpacker/nanochat
 2. Click the green **Code** button → **Download ZIP**
-3. Unzip it anywhere on your machine
+3. Unzip it, then double-click `index.html`
 
-### Open it
+### Option 3 — clone with git
 
-Double-click `index.html` and it should open in your default browser. If that browser isn't Chrome, right-click → **Open With → Google Chrome**.
-
-The address bar will show something like:
-
-```
-file:///Users/yourname/Downloads/nanochat/index.html
+```bash
+git clone https://github.com/jhpacker/nanochat.git
+open nanochat/index.html
 ```
 
-That `file://` URL is all you need — no web server required.
+### About the file:// URL
+
+However you get the file onto your disk, opening it gives you a URL like:
+
+```
+file:///Users/yourname/Downloads/nanochat.html
+```
+
+That's it — no web server required. If your default browser isn't Chrome, right-click the file → **Open With → Google Chrome**.
 
 ## Troubleshooting
 
