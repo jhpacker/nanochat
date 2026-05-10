@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NanoChat — Using Chrome built-in LLM</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --panel-2: #12151b;
+    --border: #2a2f3a;
+    --text: #e4e6eb;
+    --muted: #8a92a3;
+    --accent: #6ea8fe;
+    --user: #2d3748;
+    --assistant: #1e2530;
+    --error: #f87171;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+    overflow-x: auto;
+  }
+  .tab {
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab.disabled {
+    color: #4a505c;
+    cursor: not-allowed;
+    text-decoration: line-through;
+  }
+  .tab.disabled:hover { color: #4a505c; }
+  .panel {
+    flex: 1;
+    overflow-y: auto;
+    display: none;
+    flex-direction: column;
+  }
+  .panel.active { display: flex; }
+  .info {
+    padding: 10px 16px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .info b { color: var(--text); font-weight: 600; }
+  .info code {
+    background: var(--panel);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+  .status {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-left: 6px;
+    color: var(--muted);
+  }
+  .status.ok { color: var(--ok); border-color: var(--ok); }
+  .status.warn { color: var(--warn); border-color: var(--warn); }
+  .status.error { color: var(--error); border-color: var(--error); }
+  .controls {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .controls label {
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .controls input[type="number"],
+  .controls input[type="text"],
+  .controls select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .controls input[type="number"] { width: 60px; }
+  .controls input[type="text"] { width: 140px; }
+  button {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent);
+    color: #000;
+    font-weight: 600;
+    border: none;
+  }
+  button.primary:disabled { background: var(--panel); color: var(--muted); }
+  textarea, .out {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    line-height: 1.5;
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  .out {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    min-height: 80px;
+    background: var(--panel-2);
+  }
+  .out.error { border-color: var(--error); color: var(--error); }
+  .row { display: flex; gap: 10px; padding: 10px 16px; }
+  .row.col { flex-direction: column; }
+  .row > .grow { flex: 1; }
+  .row > label { font-size: 12px; color: var(--muted); }
+  .actions {
+    padding: 10px 16px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .actions .meta {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Prompt-API chat-specific */
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 200px;
+  }
+  .msg {
+    padding: 10px 14px;
+    border-radius: 6px;
+    max-width: 80%;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .msg.user { background: var(--user); align-self: flex-end; }
+  .msg.assistant { background: var(--assistant); align-self: flex-start; border: 1px solid var(--border); }
+  .msg.error { background: transparent; border: 1px solid var(--error); color: var(--error); align-self: flex-start; }
+  .msg .role {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+    letter-spacing: 0.05em;
+  }
+  .msg img { max-width: 200px; max-height: 200px; border-radius: 4px; margin-top: 6px; display: block; }
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--panel-2);
+  }
+  #input {
+    flex: 1;
+    min-height: 80px;
+    max-height: 240px;
+    resize: vertical;
+    font-size: 14px;
+    padding: 12px;
+    border-width: 2px;
+  }
+  #input:focus { box-shadow: 0 0 0 3px rgba(110, 168, 254, 0.15); }
+  #send {
+    min-height: 80px;
+    padding: 0 24px;
+    font-size: 14px;
+  }
+  #send.stop {
+    background: var(--error);
+    color: #fff;
+  }
+  #send.stop:hover { background: #ef4444; }
+  #usage {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 4px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  #usage .bar {
+    flex: 1;
+    min-width: 120px;
+    height: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #usage .bar .fill {
+    height: 100%;
+    width: 0%;
+    background: var(--ok);
+    transition: width 0.2s ease, background 0.2s ease;
+  }
+  #usage .bar .fill.warn { background: var(--warn); }
+  #usage .bar .fill.error { background: var(--error); }
+  .chip {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel);
+    margin-right: 4px;
+  }
+  .img-preview { display: flex; gap: 6px; padding: 0 16px 8px; flex-wrap: wrap; }
+  .img-preview .thumb {
+    position: relative;
+    width: 48px; height: 48px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .img-preview .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .img-preview .thumb button {
+    position: absolute; top: 0; right: 0;
+    padding: 0 4px;
+    font-size: 10px;
+    background: rgba(0,0,0,0.7);
+    border: none;
+    color: #fff;
+    border-radius: 0 0 0 4px;
+  }
+  .corrections { padding: 10px 16px; font-size: 12px; }
+  .corrections .corr {
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    background: var(--panel);
+    border-left: 3px solid var(--warn);
+    border-radius: 3px;
+  }
+  .corrections .corr .type {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--warn);
+    letter-spacing: 0.05em;
+  }
+  .corrections .corr del { color: var(--error); }
+  .corrections .corr ins { color: var(--ok); text-decoration: none; }
+  details summary { cursor: pointer; font-size: 12px; color: var(--accent); padding: 4px 0; }
+  details[open] summary { margin-bottom: 6px; }
+  pre.json {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    overflow-x: auto;
+    margin: 6px 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NanoChat <span style="font-weight:400;color:var(--muted)">— Using Chrome built-in LLM</span></h1>
+  <span class="status" title="All inference runs locally on-device via Gemini Nano. This page persists nothing to disk and makes no network calls.">100% local · saves nothing · no network calls</span>
+  <span style="font-size:11px;color:var(--muted)">
+    built by Jason Packer ·
+    <a href="https://quantable.com/?utm_source=nanochat" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">quantable.com</a>
+  </span>
+  <button id="copy-internals" style="margin-left:auto" title="Browsers block direct navigation to chrome:// URLs from web pages. Click to copy, then paste into your address bar.">chrome://on-device-internals ⧉</button>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="prompt">Prompt (chat)</button>
+  <button class="tab" data-tab="summarizer">Summarizer</button>
+  <button class="tab" data-tab="translator">Translator</button>
+  <button class="tab" data-tab="detector">Lang Detector</button>
+  <button class="tab" data-tab="writer">Writer</button>
+  <button class="tab" data-tab="rewriter">Rewriter</button>
+  <button class="tab" data-tab="proofreader">Proofreader</button>
+</nav>
+
+<!-- ============================================================ -->
+<!-- PROMPT API                                                   -->
+<!-- ============================================================ -->
+<section class="panel active" id="panel-prompt">
+  <div class="info">
+    <b>LanguageModel (Prompt API)</b>
+    <span class="status" id="prompt-status">checking…</span>
+    <span class="status" id="prompt-model"></span>
+    <br>
+    Multimodal Gemini Nano. Inputs: <code>text</code>, <code>image</code>, <code>audio</code> (audio needs GPU).
+    Stable in extensions since Chrome 138; web origin trial Chrome 148.
+    Sampling params (<code>temperature</code>/<code>topK</code>) work in any extension and on the web from Chrome 148+; on older web Chrome they're silently ignored.
+    Languages: <b>en, ja, es</b>. Not available in web workers.
+  </div>
+
+  <div class="controls">
+    <label>temp <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.8"></label>
+    <label>topK <input id="topK" type="number" min="1" max="40" step="1" value="3"></label>
+    <label><input type="checkbox" id="json-mode"> JSON-constrained</label>
+    <label><input type="checkbox" id="multimodal" checked> allow image input</label>
+    <button id="reset">Reset session</button>
+    <button id="clone">Clone session</button>
+  </div>
+
+  <div class="row col" style="padding-bottom:0">
+    <label>System prompt (applied on session reset)</label>
+    <textarea id="system-prompt" rows="2">You are a concise, helpful assistant running entirely on the user's device.</textarea>
+  </div>
+
+  <details style="padding: 0 16px;">
+    <summary>JSON response schema (when "JSON-constrained" is on)</summary>
+    <textarea id="json-schema" rows="6">{
+  "type": "object",
+  "properties": {
+    "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] },
+    "confidence": { "type": "number" }
+  },
+  "required": ["sentiment", "confidence"]
+}</textarea>
+  </details>
+
+  <div id="log"></div>
+
+  <div class="img-preview" id="img-preview"></div>
+  <div class="img-preview" id="audio-preview"></div>
+
+  <div id="usage">
+    <span id="usage-text">tokens: 0 / 0</span>
+    <div class="bar"><div class="fill" id="usage-bar"></div></div>
+    <span id="usage-pct">0%</span>
+    <span id="usage-defaults"></span>
+  </div>
+
+  <footer>
+    <input type="file" id="img-input" accept="image/*" multiple style="display:none">
+    <input type="file" id="audio-input" accept="audio/*" multiple style="display:none">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <button id="img-btn" title="Attach image (multimodal)">+ img</button>
+      <button id="audio-btn" title="Attach audio clip (multimodal — GPU required)">+ audio</button>
+    </div>
+    <textarea id="input" placeholder="Type a message. Enter to send, Shift+Enter for newline." rows="2"></textarea>
+    <button id="send" class="primary" disabled>Send</button>
+  </footer>
+</section>
+
+<!-- ============================================================ -->
+<!-- SUMMARIZER                                                   -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-summarizer">
+  <div class="info">
+    <b>Summarizer</b>
+    <span class="status" id="summarizer-status">not checked</span>
+    <br>
+    Condenses long-form content. Stable in Chrome 138+. <b>type</b>:
+    tldr/key-points/teaser/headline. <b>format</b>: markdown/plain-text.
+    <b>length</b>: short/medium/long. No documented input cap, but very long inputs may be truncated.
+  </div>
+  <div class="controls">
+    <label>type
+      <select id="sum-type">
+        <option>key-points</option><option>tldr</option><option>teaser</option><option>headline</option>
+      </select>
+    </label>
+    <label>format
+      <select id="sum-format"><option>markdown</option><option>plain-text</option></select>
+    </label>
+    <label>length
+      <select id="sum-length"><option>short</option><option selected>medium</option><option>long</option></select>
+    </label>
+    <label>output lang <input type="text" id="sum-out-lang" placeholder="en"></label>
+    <button id="sum-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Shared context (optional)</label>
+    <textarea id="sum-shared" rows="2" placeholder="e.g. 'A technical article aimed at developers.'"></textarea>
+  </div>
+  <div class="row col">
+    <label>Input text</label>
+    <textarea id="sum-input" rows="10" placeholder="Paste long-form text to summarize…"></textarea>
+  </div>
+  <div class="actions">
+    <button id="sum-run" class="primary">Summarize</button>
+    <button id="sum-stream">Stream</button>
+    <button id="sum-abort">Abort</button>
+    <span class="meta" id="sum-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="sum-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- TRANSLATOR                                                   -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-translator">
+  <div class="info">
+    <b>Translator</b>
+    <span class="status" id="translator-status">not checked</span>
+    <br>
+    Pairwise translator (one source → target per instance). Chrome 138+.
+    Each language pair downloads its own model on first use. Translations are processed sequentially per instance.
+    Supported: ar, bg, bn, cs, da, de, el, en, es, fi, fr, hi, hr, hu, id, it, iw, ja, kn, ko, lt, mr, nl, no, pl, pt, ro, ru, sk, sl, sv, ta, te, th, tr, uk, vi, zh, zh-Hant.
+  </div>
+  <div class="controls">
+    <label>from <input type="text" id="tr-from" value="en" size="6"></label>
+    <label>to <input type="text" id="tr-to" value="es" size="6"></label>
+    <button id="tr-check">Check pair</button>
+    <button id="tr-swap">⇄ Swap</button>
+  </div>
+  <div class="row col">
+    <label>Input</label>
+    <textarea id="tr-input" rows="6" placeholder="Text to translate…">The quick brown fox jumps over the lazy dog.</textarea>
+  </div>
+  <div class="actions">
+    <button id="tr-run" class="primary">Translate</button>
+    <button id="tr-stream">Stream</button>
+    <button id="tr-abort">Abort</button>
+    <span class="meta" id="tr-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="tr-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- LANGUAGE DETECTOR                                            -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-detector">
+  <div class="info">
+    <b>LanguageDetector</b>
+    <span class="status" id="detector-status">not checked</span>
+    <br>
+    Returns ranked <code>{ detectedLanguage, confidence }</code> array. Chrome 138+.
+    Accuracy is poor for very short input (single words / fragments).
+  </div>
+  <div class="controls">
+    <button id="ld-check">Check availability</button>
+    <button id="ld-create">Create detector</button>
+  </div>
+  <div class="row col">
+    <label>Input</label>
+    <textarea id="ld-input" rows="5" placeholder="Type or paste text in any language…">¿Dónde está la biblioteca?</textarea>
+  </div>
+  <div class="actions">
+    <button id="ld-run" class="primary">Detect</button>
+    <span class="meta" id="ld-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Top results</label>
+    <div class="out" id="ld-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- WRITER                                                       -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-writer">
+  <div class="info">
+    <b>Writer</b>
+    <span class="status" id="writer-status">not checked</span>
+    <br>
+    Composes new text from a brief. <b>Origin trial</b> (Chrome 137–148+) — register at
+    <code>developer.chrome.com/origintrials</code> if running on a normal page, or enable the
+    matching chrome://flags. Inputs feed a single one-shot generation; for multi-turn use the Prompt API.
+  </div>
+  <div class="controls">
+    <label>tone
+      <select id="wr-tone"><option>formal</option><option selected>neutral</option><option>casual</option></select>
+    </label>
+    <label>format
+      <select id="wr-format"><option selected>markdown</option><option>plain-text</option></select>
+    </label>
+    <label>length
+      <select id="wr-length"><option>short</option><option selected>medium</option><option>long</option></select>
+    </label>
+    <label>output lang <input type="text" id="wr-out-lang" placeholder="en"></label>
+    <button id="wr-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Shared context</label>
+    <textarea id="wr-shared" rows="2" placeholder="e.g. 'You are writing for a children's science magazine.'"></textarea>
+  </div>
+  <div class="row col">
+    <label>Brief / writing task</label>
+    <textarea id="wr-input" rows="4" placeholder="Describe what to write…">A polite email to my landlord asking when the broken dishwasher will be fixed.</textarea>
+  </div>
+  <div class="actions">
+    <button id="wr-run" class="primary">Write</button>
+    <button id="wr-stream">Stream</button>
+    <button id="wr-abort">Abort</button>
+    <span class="meta" id="wr-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="wr-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- REWRITER                                                     -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-rewriter">
+  <div class="info">
+    <b>Rewriter</b>
+    <span class="status" id="rewriter-status">not checked</span>
+    <br>
+    Rewrites existing text — adjusts tone, length, formality. Origin trial alongside Writer.
+    Useful for "make this more formal", "shorten", etc.
+  </div>
+  <div class="controls">
+    <label>tone
+      <select id="rw-tone">
+        <option>as-is</option><option>more-formal</option><option>more-casual</option>
+      </select>
+    </label>
+    <label>format
+      <select id="rw-format">
+        <option>as-is</option><option>markdown</option><option>plain-text</option>
+      </select>
+    </label>
+    <label>length
+      <select id="rw-length">
+        <option>as-is</option><option>shorter</option><option>longer</option>
+      </select>
+    </label>
+    <button id="rw-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Shared context (optional)</label>
+    <textarea id="rw-shared" rows="2" placeholder="e.g. 'This will be sent to a senior executive.'"></textarea>
+  </div>
+  <div class="row col">
+    <label>Text to rewrite</label>
+    <textarea id="rw-input" rows="5" placeholder="Paste text to rewrite…">hey just wanted to check in real quick to see if u had a chance to look at the doc yet. lmk!</textarea>
+  </div>
+  <div class="actions">
+    <button id="rw-run" class="primary">Rewrite</button>
+    <button id="rw-stream">Stream</button>
+    <button id="rw-abort">Abort</button>
+    <span class="meta" id="rw-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="rw-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- PROOFREADER                                                  -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-proofreader">
+  <div class="info">
+    <b>Proofreader</b>
+    <span class="status" id="proofreader-status">not checked</span>
+    <br>
+    Returns <code>{ correctedInput, corrections[] }</code> with start/end indices and per-error type
+    (grammar/spelling/punctuation). <b>Origin trial</b> only (Chrome 141–145).
+    May be unavailable depending on your channel — Canary/Dev are most reliable.
+  </div>
+  <div class="controls">
+    <label>input lang <input type="text" id="pf-lang" value="en" size="6"></label>
+    <button id="pf-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Text to proofread</label>
+    <textarea id="pf-input" rows="5" placeholder="Type text with errors…">Their going to the store, but they dont know what to by. its alot of decisions to make.</textarea>
+  </div>
+  <div class="actions">
+    <button id="pf-run" class="primary">Proofread</button>
+    <span class="meta" id="pf-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Corrected text</label>
+    <div class="out" id="pf-out"></div>
+  </div>
+  <div class="corrections" id="pf-corrections"></div>
+</section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- Copy chrome:// link ----------
+  const copyInternalsBtn = $('copy-internals');
+  copyInternalsBtn.addEventListener('click', async () => {
+    const url = 'chrome://on-device-internals';
+    const original = copyInternalsBtn.textContent;
+    try {
+      await navigator.clipboard.writeText(url);
+      copyInternalsBtn.textContent = 'copied! paste into address bar';
+    } catch {
+      copyInternalsBtn.textContent = 'copy failed — paste manually';
+    }
+    setTimeout(() => { copyInternalsBtn.textContent = original; }, 2000);
+  });
+
+  // ---------- Tabs ----------
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      if (tab.classList.contains('disabled')) return;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      $('panel-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---------- On-load availability sweep ----------
+  // Each entry: tab id → { global, statusEl, opts }
+  const TAB_APIS = [
+    { tab: 'prompt',      global: 'LanguageModel',    statusEl: 'prompt-status' },
+    { tab: 'summarizer',  global: 'Summarizer',       statusEl: 'summarizer-status' },
+    { tab: 'translator',  global: 'Translator',       statusEl: 'translator-status', opts: { sourceLanguage: 'en', targetLanguage: 'es' } },
+    { tab: 'detector',    global: 'LanguageDetector', statusEl: 'detector-status' },
+    { tab: 'writer',      global: 'Writer',           statusEl: 'writer-status' },
+    { tab: 'rewriter',    global: 'Rewriter',         statusEl: 'rewriter-status' },
+    { tab: 'proofreader', global: 'Proofreader',      statusEl: 'proofreader-status' },
+  ];
+
+  function disableTab(tabId, reason) {
+    const tab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    if (!tab) return;
+    tab.classList.add('disabled');
+    tab.title = reason;
+  }
+
+  async function sweepAvailability() {
+    await Promise.all(TAB_APIS.map(async ({ tab, global, statusEl, opts }) => {
+      const el = $(statusEl);
+      if (!(global in self)) {
+        setStatus(el, 'not in self', 'error');
+        disableTab(tab, `${global} is not exposed in this Chrome build`);
+        return;
+      }
+      try {
+        const a = await self[global].availability(opts);
+        const cls = (a === 'available' || a === 'readily-available') ? 'ok'
+                  : (a === 'unavailable') ? 'error' : 'warn';
+        setStatus(el, a, cls);
+        if (a === 'unavailable') {
+          disableTab(tab, `${global}.availability() reported "unavailable"`);
+        }
+      } catch (e) {
+        setStatus(el, `availability() failed: ${e.message}`, 'error');
+        // Don't disable on error — the API exists, the user might still want to try.
+      }
+    }));
+  }
+  sweepAvailability();
+
+  // ---------- Shared helpers ----------
+  function setStatus(el, text, cls = '') {
+    el.textContent = text;
+    el.className = 'status ' + cls;
+  }
+
+  function makeMonitor(statusEl, prefix = 'downloading') {
+    return (m) => {
+      m.addEventListener('downloadprogress', (e) => {
+        const pct = (e.loaded * 100).toFixed(1);
+        setStatus(statusEl, `${prefix} ${pct}%`, 'warn');
+      });
+    };
+  }
+
+  async function checkAvailability(api, statusEl, opts = undefined) {
+    if (!(api in self)) {
+      setStatus(statusEl, `${api} not in self`, 'error');
+      return null;
+    }
+    try {
+      const a = await self[api].availability(opts);
+      const cls = (a === 'available' || a === 'readily-available') ? 'ok'
+                : (a === 'unavailable') ? 'error' : 'warn';
+      setStatus(statusEl, a, cls);
+      return a;
+    } catch (e) {
+      setStatus(statusEl, `availability() failed: ${e.message}`, 'error');
+      return null;
+    }
+  }
+
+  function showError(outEl, e) {
+    outEl.classList.add('error');
+    outEl.textContent = `error: ${e.message || e}`;
+  }
+  function clearOut(outEl) {
+    outEl.classList.remove('error');
+    outEl.textContent = '';
+  }
+
+  // ============================================================
+  // PROMPT API
+  // ============================================================
+  const promptStatus = $('prompt-status');
+  const promptModel = $('prompt-model');
+  const logEl = $('log');
+  const inputEl = $('input');
+  const sendBtn = $('send');
+  const resetBtn = $('reset');
+  const cloneBtn = $('clone');
+  const tempEl = $('temperature');
+  const topKEl = $('topK');
+  const systemEl = $('system-prompt');
+  const usageEl = $('usage-text');
+  const usageDefaultsEl = $('usage-defaults');
+  const jsonModeEl = $('json-mode');
+  const jsonSchemaEl = $('json-schema');
+  const multimodalEl = $('multimodal');
+  const imgBtn = $('img-btn');
+  const imgInput = $('img-input');
+  const imgPreview = $('img-preview');
+  const audioBtn = $('audio-btn');
+  const audioInput = $('audio-input');
+  const audioPreview = $('audio-preview');
+
+  let session = null;
+  let generating = false;
+  let chatAbort = null;
+  let attachedImages = []; // [{ blob, url }]
+  let attachedAudio = [];  // [{ blob, name }]
+
+  function addMessage(role, text, imgs = []) {
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    const roleLabel = document.createElement('div');
+    roleLabel.className = 'role';
+    roleLabel.textContent = role;
+    const body = document.createElement('div');
+    body.textContent = text;
+    div.append(roleLabel, body);
+    for (const url of imgs) {
+      const img = document.createElement('img');
+      img.src = url;
+      div.append(img);
+    }
+    logEl.append(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    return body;
+  }
+
+  const usageBarEl = $('usage-bar');
+  const usagePctEl = $('usage-pct');
+  function updateUsage() {
+    if (!session) return;
+    // Newer property names: contextUsage / contextWindow.
+    // Older Chrome exposes inputUsage / inputQuota. Fall back gracefully.
+    const used = session.inputUsage ?? session.contextUsage ?? 0;
+    const quota = session.inputQuota ?? session.contextWindow ?? 0;
+    usageEl.textContent = `tokens: ${used} / ${quota}`;
+    const pct = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
+    usageBarEl.style.width = pct.toFixed(1) + '%';
+    usageBarEl.classList.toggle('warn', pct >= 70 && pct < 90);
+    usageBarEl.classList.toggle('error', pct >= 90);
+    usagePctEl.textContent = pct.toFixed(1) + '%';
+  }
+
+  function renderImgPreview() {
+    imgPreview.innerHTML = '';
+    attachedImages.forEach((a, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb';
+      const img = document.createElement('img');
+      img.src = a.url;
+      const btn = document.createElement('button');
+      btn.textContent = '×';
+      btn.addEventListener('click', () => {
+        URL.revokeObjectURL(a.url);
+        attachedImages.splice(i, 1);
+        renderImgPreview();
+      });
+      wrap.append(img, btn);
+      imgPreview.append(wrap);
+    });
+  }
+
+  imgBtn.addEventListener('click', () => imgInput.click());
+  imgInput.addEventListener('change', (e) => {
+    for (const file of e.target.files) {
+      attachedImages.push({ blob: file, url: URL.createObjectURL(file) });
+    }
+    imgInput.value = '';
+    renderImgPreview();
+  });
+
+  function renderAudioPreview() {
+    audioPreview.innerHTML = '';
+    attachedAudio.forEach((a, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb';
+      wrap.style.width = 'auto';
+      wrap.style.height = 'auto';
+      wrap.style.padding = '4px 8px';
+      wrap.style.fontSize = '11px';
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '6px';
+      wrap.textContent = `🔊 ${a.name}`;
+      const btn = document.createElement('button');
+      btn.textContent = '×';
+      btn.style.position = 'static';
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--muted)';
+      btn.style.border = 'none';
+      btn.addEventListener('click', () => {
+        attachedAudio.splice(i, 1);
+        renderAudioPreview();
+      });
+      wrap.append(btn);
+      audioPreview.append(wrap);
+    });
+  }
+
+  audioBtn.addEventListener('click', () => audioInput.click());
+  audioInput.addEventListener('change', (e) => {
+    for (const file of e.target.files) {
+      attachedAudio.push({ blob: file, name: file.name });
+    }
+    audioInput.value = '';
+    renderAudioPreview();
+  });
+
+  async function initPrompt() {
+    if (!('LanguageModel' in self)) {
+      setStatus(promptStatus, 'LanguageModel API not available', 'error');
+      addMessage('error', 'This browser does not expose LanguageModel. Requires Chrome 138+ with the on-device model component installed. Enable chrome://flags#prompt-api-for-gemini-nano and check chrome://on-device-internals.');
+      return;
+    }
+
+    setStatus(promptStatus, 'checking…');
+    const expected = multimodalEl.checked
+      ? { expectedInputs: [{ type: 'text' }, { type: 'image' }] }
+      : undefined;
+    const availability = await checkAvailability('LanguageModel', promptStatus, expected);
+    if (!availability || availability === 'unavailable') return;
+
+    try {
+      const params = await LanguageModel.params();
+      usageDefaultsEl.textContent = `defaults: temp ${params.defaultTemperature}, topK ${params.defaultTopK}`;
+      tempEl.value = params.defaultTemperature;
+      topKEl.value = params.defaultTopK;
+    } catch {}
+
+    if (availability === 'downloadable' || availability === 'downloading') {
+      addMessage('assistant', 'Model component is being downloaded. Try again once it finishes.');
+    }
+
+    await createSession();
+  }
+
+  async function createSession() {
+    if (session) {
+      try { session.destroy(); } catch {}
+      session = null;
+    }
+    setStatus(promptStatus, 'creating session…', 'warn');
+    try {
+      const opts = {
+        temperature: parseFloat(tempEl.value),
+        topK: parseInt(topKEl.value, 10),
+        monitor: makeMonitor(promptStatus, 'downloading')
+      };
+      if (multimodalEl.checked) {
+        opts.expectedInputs = [{ type: 'text' }, { type: 'image' }, { type: 'audio' }];
+      }
+      const sys = systemEl.value.trim();
+      if (sys) opts.initialPrompts = [{ role: 'system', content: sys }];
+
+      session = await LanguageModel.create(opts);
+      session.addEventListener?.('contextoverflow', () => {
+        addMessage('error', 'context overflow — session is full. Reset or clone to continue.');
+        updateUsage();
+      });
+      setStatus(promptStatus, 'ready', 'ok');
+      sendBtn.disabled = false;
+      updateUsage();
+    } catch (e) {
+      setStatus(promptStatus, `create() failed: ${e.message}`, 'error');
+      addMessage('error', `create() failed: ${e.message}`);
+    }
+  }
+
+  async function send() {
+    if (generating) { chatAbort && chatAbort.abort(); return; }
+    if (!session) return;
+    const text = inputEl.value.trim();
+    if (!text && attachedImages.length === 0 && attachedAudio.length === 0) return;
+    inputEl.value = '';
+
+    const imgUrls = attachedImages.map(a => a.url);
+    const audioNames = attachedAudio.map(a => `🔊 ${a.name}`).join(' ');
+    addMessage('user', audioNames ? (text ? text + '\n' + audioNames : audioNames) : text, imgUrls);
+
+    let messageContent;
+    if (attachedImages.length > 0 || attachedAudio.length > 0) {
+      const parts = [];
+      if (text) parts.push({ type: 'text', value: text });
+      for (const a of attachedImages) parts.push({ type: 'image', value: a.blob });
+      for (const a of attachedAudio) parts.push({ type: 'audio', value: a.blob });
+      messageContent = [{ role: 'user', content: parts }];
+    } else {
+      messageContent = text;
+    }
+
+    const callOpts = {};
+    if (jsonModeEl.checked) {
+      try {
+        callOpts.responseConstraint = JSON.parse(jsonSchemaEl.value);
+      } catch (e) {
+        addMessage('error', `Invalid JSON schema: ${e.message}`);
+        return;
+      }
+    }
+
+    const out = addMessage('assistant', '');
+    generating = true;
+    chatAbort = new AbortController();
+    callOpts.signal = chatAbort.signal;
+    sendBtn.textContent = 'Stop';
+    sendBtn.classList.add('stop');
+
+    try {
+      const stream = session.promptStreaming(messageContent, callOpts);
+      for await (const chunk of stream) {
+        out.textContent += chunk;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      // Clear attachments after a successful send (they're now in conversation history).
+      for (const a of attachedImages) URL.revokeObjectURL(a.url);
+      attachedImages = [];
+      attachedAudio = [];
+      renderImgPreview();
+      renderAudioPreview();
+    } catch (e) {
+      const aborted = e.name === 'AbortError' || chatAbort?.signal.aborted;
+      out.parentElement.classList.remove('assistant');
+      out.parentElement.classList.add('error');
+      out.textContent = aborted ? '(stopped)' : `error: ${e.message}`;
+    } finally {
+      generating = false;
+      chatAbort = null;
+      sendBtn.textContent = 'Send';
+      sendBtn.classList.remove('stop');
+      updateUsage();
+    }
+  }
+
+  sendBtn.addEventListener('click', send);
+  resetBtn.addEventListener('click', () => { logEl.innerHTML = ''; createSession(); });
+  cloneBtn.addEventListener('click', async () => {
+    if (!session) return;
+    try {
+      const clone = await session.clone();
+      try { session.destroy(); } catch {}
+      session = clone;
+      addMessage('assistant', '[session cloned — context preserved, fresh continuation]');
+      updateUsage();
+    } catch (e) {
+      addMessage('error', `clone() failed: ${e.message}`);
+    }
+  });
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  [tempEl, topKEl, multimodalEl].forEach(el => el.addEventListener('change', createSession));
+
+  initPrompt();
+
+  // ============================================================
+  // SUMMARIZER
+  // ============================================================
+  const sumStatus = $('summarizer-status');
+  const sumOut = $('sum-out');
+  const sumMeta = $('sum-meta');
+  let sumAbort = null;
+
+  $('sum-check').addEventListener('click', () => checkAvailability('Summarizer', sumStatus));
+
+  async function runSummarizer(streaming) {
+    if (!('Summarizer' in self)) { showError(sumOut, new Error('Summarizer not in self')); return; }
+    const opts = {
+      type: $('sum-type').value,
+      format: $('sum-format').value,
+      length: $('sum-length').value,
+      sharedContext: $('sum-shared').value || undefined,
+      monitor: makeMonitor(sumStatus, 'downloading')
+    };
+    const ol = $('sum-out-lang').value.trim();
+    if (ol) opts.outputLanguage = ol;
+
+    clearOut(sumOut);
+    sumMeta.textContent = '';
+    const t0 = performance.now();
+    sumAbort = new AbortController();
+    let summarizer;
+    try {
+      summarizer = await Summarizer.create(opts);
+      setStatus(sumStatus, 'ready', 'ok');
+      const text = $('sum-input').value;
+      if (streaming) {
+        const stream = summarizer.summarizeStreaming(text, { signal: sumAbort.signal });
+        for await (const chunk of stream) sumOut.textContent += chunk;
+      } else {
+        sumOut.textContent = await summarizer.summarize(text, { signal: sumAbort.signal });
+      }
+      sumMeta.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+    } catch (e) {
+      showError(sumOut, e);
+    } finally {
+      try { summarizer && summarizer.destroy(); } catch {}
+      sumAbort = null;
+    }
+  }
+  $('sum-run').addEventListener('click', () => runSummarizer(false));
+  $('sum-stream').addEventListener('click', () => runSummarizer(true));
+  $('sum-abort').addEventListener('click', () => sumAbort && sumAbort.abort());
+
+  // ============================================================
+  // TRANSLATOR
+  // ============================================================
+  const trStatus = $('translator-status');
+  const trOut = $('tr-out');
+  const trMeta = $('tr-meta');
+  let trAbort = null;
+
+  $('tr-check').addEventListener('click', () => checkAvailability('Translator', trStatus, {
+    sourceLanguage: $('tr-from').value.trim(),
+    targetLanguage: $('tr-to').value.trim()
+  }));
+  $('tr-swap').addEventListener('click', () => {
+    const f = $('tr-from'), t = $('tr-to');
+    [f.value, t.value] = [t.value, f.value];
+  });
+
+  async function runTranslator(streaming) {
+    if (!('Translator' in self)) { showError(trOut, new Error('Translator not in self')); return; }
+    clearOut(trOut);
+    trMeta.textContent = '';
+    const t0 = performance.now();
+    trAbort = new AbortController();
+    let translator;
+    try {
+      translator = await Translator.create({
+        sourceLanguage: $('tr-from').value.trim(),
+        targetLanguage: $('tr-to').value.trim(),
+        monitor: makeMonitor(trStatus, 'downloading')
+      });
+      setStatus(trStatus, 'ready', 'ok');
+      const text = $('tr-input').value;
+      if (streaming) {
+        const stream = translator.translateStreaming(text, { signal: trAbort.signal });
+        for await (const chunk of stream) trOut.textContent += chunk;
+      } else {
+        trOut.textContent = await translator.translate(text, { signal: trAbort.signal });
+      }
+      trMeta.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+    } catch (e) {
+      showError(trOut, e);
+    } finally {
+      try { translator && translator.destroy && translator.destroy(); } catch {}
+      trAbort = null;
+    }
+  }
+  $('tr-run').addEventListener('click', () => runTranslator(false));
+  $('tr-stream').addEventListener('click', () => runTranslator(true));
+  $('tr-abort').addEventListener('click', () => trAbort && trAbort.abort());
+
+  // ============================================================
+  // LANGUAGE DETECTOR
+  // ============================================================
+  const ldStatus = $('detector-status');
+  const ldOut = $('ld-out');
+  const ldMeta = $('ld-meta');
+  let ldDetector = null;
+
+  $('ld-check').addEventListener('click', () => checkAvailability('LanguageDetector', ldStatus));
+  $('ld-create').addEventListener('click', async () => {
+    if (!('LanguageDetector' in self)) { setStatus(ldStatus, 'not in self', 'error'); return; }
+    try {
+      ldDetector = await LanguageDetector.create({ monitor: makeMonitor(ldStatus, 'downloading') });
+      setStatus(ldStatus, 'ready', 'ok');
+    } catch (e) {
+      setStatus(ldStatus, `create() failed: ${e.message}`, 'error');
+    }
+  });
+  $('ld-run').addEventListener('click', async () => {
+    clearOut(ldOut);
+    ldMeta.textContent = '';
+    if (!ldDetector) {
+      try {
+        ldDetector = await LanguageDetector.create({ monitor: makeMonitor(ldStatus, 'downloading') });
+        setStatus(ldStatus, 'ready', 'ok');
+      } catch (e) { showError(ldOut, e); return; }
+    }
+    const t0 = performance.now();
+    try {
+      const results = await ldDetector.detect($('ld-input').value);
+      const top = results.slice(0, 5)
+        .map(r => `${r.detectedLanguage}\t${(r.confidence * 100).toFixed(2)}%`)
+        .join('\n');
+      ldOut.textContent = top;
+      ldMeta.textContent = `${(performance.now() - t0).toFixed(0)} ms · ${results.length} candidates`;
+    } catch (e) { showError(ldOut, e); }
+  });
+
+  // ============================================================
+  // WRITER
+  // ============================================================
+  const wrStatus = $('writer-status');
+  const wrOut = $('wr-out');
+  const wrMeta = $('wr-meta');
+  let wrAbort = null;
+
+  $('wr-check').addEventListener('click', () => checkAvailability('Writer', wrStatus));
+
+  async function runWriter(streaming) {
+    if (!('Writer' in self)) { showError(wrOut, new Error('Writer not in self — needs origin trial token or chrome://flags')); return; }
+    const opts = {
+      tone: $('wr-tone').value,
+      format: $('wr-format').value,
+      length: $('wr-length').value,
+      sharedContext: $('wr-shared').value || undefined,
+      monitor: makeMonitor(wrStatus, 'downloading')
+    };
+    const ol = $('wr-out-lang').value.trim();
+    if (ol) opts.outputLanguage = ol;
+
+    clearOut(wrOut);
+    wrMeta.textContent = '';
+    const t0 = performance.now();
+    wrAbort = new AbortController();
+    let writer;
+    try {
+      writer = await Writer.create(opts);
+      setStatus(wrStatus, 'ready', 'ok');
+      const text = $('wr-input').value;
+      if (streaming) {
+        const stream = writer.writeStreaming(text, { signal: wrAbort.signal });
+        for await (const chunk of stream) wrOut.textContent += chunk;
+      } else {
+        wrOut.textContent = await writer.write(text, { signal: wrAbort.signal });
+      }
+      wrMeta.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+    } catch (e) {
+      showError(wrOut, e);
+    } finally {
+      try { writer && writer.destroy(); } catch {}
+      wrAbort = null;
+    }
+  }
+  $('wr-run').addEventListener('click', () => runWriter(false));
+  $('wr-stream').addEventListener('click', () => runWriter(true));
+  $('wr-abort').addEventListener('click', () => wrAbort && wrAbort.abort());
+
+  // ============================================================
+  // REWRITER
+  // ============================================================
+  const rwStatus = $('rewriter-status');
+  const rwOut = $('rw-out');
+  const rwMeta = $('rw-meta');
+  let rwAbort = null;
+
+  $('rw-check').addEventListener('click', () => checkAvailability('Rewriter', rwStatus));
+
+  async function runRewriter(streaming) {
+    if (!('Rewriter' in self)) { showError(rwOut, new Error('Rewriter not in self — needs origin trial token or chrome://flags')); return; }
+    const opts = {
+      tone: $('rw-tone').value,
+      format: $('rw-format').value,
+      length: $('rw-length').value,
+      sharedContext: $('rw-shared').value || undefined,
+      monitor: makeMonitor(rwStatus, 'downloading')
+    };
+    clearOut(rwOut);
+    rwMeta.textContent = '';
+    const t0 = performance.now();
+    rwAbort = new AbortController();
+    let rewriter;
+    try {
+      rewriter = await Rewriter.create(opts);
+      setStatus(rwStatus, 'ready', 'ok');
+      const text = $('rw-input').value;
+      if (streaming) {
+        const stream = rewriter.rewriteStreaming(text, { signal: rwAbort.signal });
+        for await (const chunk of stream) rwOut.textContent += chunk;
+      } else {
+        rwOut.textContent = await rewriter.rewrite(text, { signal: rwAbort.signal });
+      }
+      rwMeta.textContent = `${(performance.now() - t0).toFixed(0)} ms`;
+    } catch (e) {
+      showError(rwOut, e);
+    } finally {
+      try { rewriter && rewriter.destroy(); } catch {}
+      rwAbort = null;
+    }
+  }
+  $('rw-run').addEventListener('click', () => runRewriter(false));
+  $('rw-stream').addEventListener('click', () => runRewriter(true));
+  $('rw-abort').addEventListener('click', () => rwAbort && rwAbort.abort());
+
+  // ============================================================
+  // PROOFREADER
+  // ============================================================
+  const pfStatus = $('proofreader-status');
+  const pfOut = $('pf-out');
+  const pfMeta = $('pf-meta');
+  const pfCorrections = $('pf-corrections');
+
+  $('pf-check').addEventListener('click', () => checkAvailability('Proofreader', pfStatus));
+
+  $('pf-run').addEventListener('click', async () => {
+    if (!('Proofreader' in self)) { showError(pfOut, new Error('Proofreader not in self — origin trial only (Chrome 141–145), try Canary')); return; }
+    clearOut(pfOut);
+    pfCorrections.innerHTML = '';
+    pfMeta.textContent = '';
+    const t0 = performance.now();
+    let pf;
+    try {
+      pf = await Proofreader.create({
+        expectedInputLanguages: [$('pf-lang').value.trim() || 'en'],
+        monitor: makeMonitor(pfStatus, 'downloading')
+      });
+      setStatus(pfStatus, 'ready', 'ok');
+      const result = await pf.proofread($('pf-input').value);
+      pfOut.textContent = result.correctedInput || result.corrected || '(no corrected text returned)';
+      const corrections = result.corrections || [];
+      pfMeta.textContent = `${(performance.now() - t0).toFixed(0)} ms · ${corrections.length} corrections`;
+      const original = $('pf-input').value;
+      for (const c of corrections) {
+        const div = document.createElement('div');
+        div.className = 'corr';
+        const start = c.startIndex ?? c.offset ?? 0;
+        const end = c.endIndex ?? (start + (c.length ?? 0));
+        const orig = original.slice(start, end);
+        div.innerHTML = `<div class="type">${c.type || 'edit'}</div>
+          <div><del>${escapeHtml(orig)}</del> → <ins>${escapeHtml(c.correction || '')}</ins></div>
+          ${c.explanation ? `<div style="color:var(--muted);font-size:11px;margin-top:2px">${escapeHtml(c.explanation)}</div>` : ''}`;
+        pfCorrections.append(div);
+      }
+    } catch (e) {
+      showError(pfOut, e);
+    } finally {
+      try { pf && pf.destroy && pf.destroy(); } catch {}
+    }
+  });
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+</script>
+</body>
+</html>
