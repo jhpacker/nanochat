@@ -47,7 +47,7 @@
   }
   .tab {
     padding: 8px 14px;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
     background: transparent;
     border: none;
@@ -78,7 +78,7 @@
     padding: 10px 16px;
     background: var(--panel-2);
     border-bottom: 1px solid var(--border);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
     line-height: 1.5;
   }
@@ -87,11 +87,11 @@
     background: var(--panel);
     padding: 1px 5px;
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .status {
     display: inline-block;
-    font-size: 11px;
+    font-size: 12px;
     padding: 2px 8px;
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -110,7 +110,7 @@
     flex-wrap: wrap;
   }
   .controls label {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
     display: flex;
     align-items: center;
@@ -124,7 +124,7 @@
     color: var(--text);
     padding: 3px 6px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
     font-family: inherit;
   }
   .controls input[type="number"] { width: 60px; }
@@ -135,7 +135,7 @@
     color: var(--text);
     padding: 4px 10px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
     font-family: inherit;
   }
@@ -155,7 +155,7 @@
     color: var(--text);
     padding: 10px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 14px;
     font-family: inherit;
     resize: vertical;
     line-height: 1.5;
@@ -171,7 +171,7 @@
   .row { display: flex; gap: 10px; padding: 10px 16px; }
   .row.col { flex-direction: column; }
   .row > .grow { flex: 1; }
-  .row > label { font-size: 12px; color: var(--muted); }
+  .row > label { font-size: 13px; color: var(--muted); }
   .actions {
     padding: 10px 16px;
     display: flex;
@@ -181,7 +181,7 @@
   }
   .actions .meta {
     margin-left: auto;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--muted);
   }
 
@@ -201,8 +201,8 @@
     max-width: 80%;
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 15px;
+    line-height: 1.55;
   }
   .msg.user { background: var(--user); align-self: flex-end; }
   .msg.assistant { background: var(--assistant); align-self: flex-start; border: 1px solid var(--border); }
@@ -215,20 +215,34 @@
     letter-spacing: 0.05em;
   }
   .msg img { max-width: 200px; max-height: 200px; border-radius: 4px; margin-top: 6px; display: block; }
+  .msg.assistant code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  .msg.assistant pre { background: var(--panel-2); border: 1px solid var(--border); padding: 8px; border-radius: 4px; overflow-x: auto; margin: 6px 0; }
+  .msg.assistant pre code { background: none; padding: 0; font-size: 12px; }
+  .msg.assistant ul, .msg.assistant ol { margin: 4px 0; padding-left: 24px; }
+  .msg.assistant li { margin: 2px 0; }
+  .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { font-size: 1.1em; margin: 8px 0 4px; font-weight: 600; }
+  .msg.assistant h4, .msg.assistant h5, .msg.assistant h6 { font-size: 1em; margin: 6px 0 2px; font-weight: 600; }
+  .msg.assistant a { color: var(--accent); }
+  .msg.assistant blockquote { border-left: 3px solid var(--border); padding-left: 10px; margin: 6px 0; color: var(--muted); }
+  .msg.assistant hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+  .msg.assistant table { border-collapse: collapse; margin: 6px 0; font-size: 0.95em; }
+  .msg.assistant th, .msg.assistant td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .msg.assistant th { background: var(--panel-2); font-weight: 600; }
   footer {
-    border-top: 1px solid var(--border);
+    border-top: 2px solid var(--accent);
     padding: 14px 16px;
     display: flex;
     gap: 10px;
     align-items: flex-end;
-    background: var(--panel-2);
+    background: var(--panel);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
   }
   #input {
     flex: 1;
     min-height: 80px;
     max-height: 240px;
     resize: vertical;
-    font-size: 14px;
+    font-size: 15px;
     padding: 12px;
     border-width: 2px;
   }
@@ -236,7 +250,7 @@
   #send {
     min-height: 80px;
     padding: 0 24px;
-    font-size: 14px;
+    font-size: 15px;
   }
   #send.stop {
     background: var(--error);
@@ -313,7 +327,7 @@
   }
   .corrections .corr del { color: var(--error); }
   .corrections .corr ins { color: var(--ok); text-decoration: none; }
-  details summary { cursor: pointer; font-size: 12px; color: var(--accent); padding: 4px 0; }
+  details summary { cursor: pointer; font-size: 13px; color: var(--accent); padding: 4px 0; }
   details[open] summary { margin-bottom: 6px; }
   pre.json {
     background: var(--panel);
@@ -331,10 +345,6 @@
 <header>
   <h1>NanoChat <span style="font-weight:400;color:var(--muted)">— Using Chrome's built-in LLM</span></h1>
   <span class="status" title="All inference runs locally on-device via Gemini Nano. This page persists nothing to disk and makes no network calls.">100% local · saves nothing · no network calls</span>
-  <span style="font-size:11px;color:var(--muted)">
-    built by Jason Packer ·
-    <a href="https://quantable.com/?utm_source=nanochat" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">quantable.com</a>
-  </span>
   <button id="copy-internals" style="margin-left:auto" title="Browsers block direct navigation to chrome:// URLs from web pages. Click to copy, then paste into your address bar.">chrome://on-device-internals ⧉</button>
 </header>
 
@@ -355,31 +365,41 @@
   <div class="info">
     <b>LanguageModel (Prompt API)</b>
     <span class="status" id="prompt-status">checking…</span>
-    <span class="status" id="prompt-model"></span>
     <br>
     Multimodal Gemini Nano. Inputs: <code>text</code>, <code>image</code>, <code>audio</code> (audio needs GPU).
     Stable in extensions since Chrome 138; web origin trial Chrome 148.
     Sampling params (<code>temperature</code>/<code>topK</code>) work in any extension and on the web from Chrome 148+; on older web Chrome they're silently ignored.
-    Languages: <b>en, ja, es</b>. Not available in web workers.
+    Languages: <b>en, ja, es</b>.
   </div>
 
-  <div class="controls">
-    <label>temp <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.8"></label>
-    <label>topK <input id="topK" type="number" min="1" max="40" step="1" value="3"></label>
-    <label><input type="checkbox" id="json-mode"> JSON-constrained</label>
-    <label><input type="checkbox" id="multimodal" checked> allow image input</label>
-    <button id="reset">Reset session</button>
-    <button id="clone">Clone session</button>
-  </div>
+  <details style="border-bottom: 1px solid var(--border)">
+    <summary style="padding: 8px 16px; font-size: 13px; color: var(--accent); cursor: pointer; user-select: none;">⚙️ Options (temp, topK, system prompt, JSON schema, probe languages)</summary>
 
-  <div class="row col" style="padding-bottom:0">
-    <label>System prompt (applied on session reset)</label>
-    <textarea id="system-prompt" rows="2">You are a concise, helpful assistant.</textarea>
-  </div>
+    <div class="controls">
+      <label>temp <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.8"></label>
+      <label>topK <input id="topK" type="number" min="1" max="40" step="1" value="3"></label>
+      <label><input type="checkbox" id="json-mode"> JSON-constrained</label>
+      <label><input type="checkbox" id="multimodal" checked> allow image input</label>
+      <button id="reset">Reset session</button>
+      <button id="prompt-probe">Probe languages</button>
+    </div>
 
-  <details style="padding: 0 16px;">
-    <summary>JSON response schema (when "JSON-constrained" is on)</summary>
-    <textarea id="json-schema" rows="6">{
+    <div id="prompt-probe-out" class="row col" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <label>Language probe results</label>
+        <button class="hide-probe" data-target="prompt-probe-out">Hide probe</button>
+      </div>
+      <div class="out" style="font-family:ui-monospace,monospace;font-size:11px"></div>
+    </div>
+
+    <div class="row col" style="padding-bottom:0">
+      <label>System prompt</label>
+      <textarea id="system-prompt" rows="2">You are a concise, helpful assistant.</textarea>
+    </div>
+
+    <details style="padding: 0 16px 12px;">
+      <summary>JSON response schema (when "JSON-constrained" is on)</summary>
+      <textarea id="json-schema" rows="6">{
   "type": "object",
   "properties": {
     "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] },
@@ -387,6 +407,7 @@
   },
   "required": ["sentiment", "confidence"]
 }</textarea>
+    </details>
   </details>
 
   <div id="log"></div>
@@ -477,6 +498,15 @@
     <label>to <input type="text" id="tr-to" value="es" size="6"></label>
     <button id="tr-check">Check pair</button>
     <button id="tr-swap">⇄ Swap</button>
+    <button id="tr-probe">Probe languages</button>
+  </div>
+
+  <div id="tr-probe-out" class="row col" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <label>Language probe results (target from "from" language)</label>
+      <button class="hide-probe" data-target="tr-probe-out">Hide probe</button>
+    </div>
+    <div class="out" style="font-family:ui-monospace,monospace;font-size:11px"></div>
   </div>
   <div class="row col">
     <label>Input</label>
@@ -719,6 +749,137 @@
   }
   sweepAvailability();
 
+  // ---------- Markdown rendering (snarkdown by Jason Miller, MIT) ----------
+  // Source: https://github.com/developit/snarkdown — ~1KB
+  const MD_TAGS = {
+    '': ['<em>', '</em>'],
+    _: ['<strong>', '</strong>'],
+    '*': ['<strong>', '</strong>'],
+    '~': ['<s>', '</s>'],
+    '\n': ['<br />'],
+    ' ': ['<br />'],
+    '-': ['<hr />']
+  };
+  function mdOutdent(str) {
+    return str.replace(RegExp('^' + (str.match(/^(\t| )+/) || '')[0], 'gm'), '');
+  }
+  function mdEncodeAttr(str) {
+    return (str + '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function snarkdown(md, prevLinks) {
+    const tokenizer = /((?:^|\n+)(?:\n---+|\* \*(?: \*)+)\n)|(?:^``` *(\w*)\n([\s\S]*?)\n```$)|((?:(?:^|\n+)(?:\t|  {2,}).+)+\n*)|((?:(?:^|\n)([>*+-]|\d+\.)\s+.*)+)|(?:!\[([^\]]*?)\]\(([^)]+?)\))|(\[)|(\](?:\(([^)]+?)\))?)|(?:(?:^|\n+)([^\s].*)\n(-{3,}|={3,})(?:\n+|$))|(?:(?:^|\n+)(#{1,6})\s*(.+)(?:\n+|$))|(?:`([^`].*?)`)|(  \n\n*|\n{2,}|__|\*\*|[_*]|~~)/gm;
+    const context = [];
+    let out = '';
+    const links = prevLinks || {};
+    let last = 0, chunk, prev, token, inner, t;
+    function tag(token) {
+      const desc = MD_TAGS[token[1] || ''];
+      if (!desc) return token;
+      // Self-closing tags (<br/>, <hr/>) — no open/close stack management,
+      // otherwise repeats produce undefined for the missing close.
+      if (desc.length === 1) return desc[0];
+      const end = context[context.length - 1] == token;
+      if (!end) context.push(token); else context.pop();
+      return desc[end | 0];
+    }
+    function flush() {
+      let str = '';
+      while (context.length) str += tag(context[context.length - 1]);
+      return str;
+    }
+    md = md.replace(/^\[(.+?)\]:\s*(.+)$/gm, (s, name, url) => {
+      links[name.toLowerCase()] = url; return '';
+    }).replace(/^\n+|\n+$/g, '');
+    while ((token = tokenizer.exec(md))) {
+      prev = md.substring(last, token.index);
+      last = tokenizer.lastIndex;
+      chunk = token[0];
+      if (prev.match(/[^\\](\\\\)*\\$/)) {
+        // escaped — leave chunk as-is
+      } else if (t = (token[3] || token[4])) {
+        chunk = '<pre class="code ' + (token[4] ? 'poetry' : token[2].toLowerCase()) + '"><code' + (token[2] ? ` class="language-${token[2].toLowerCase()}"` : '') + '>' + mdOutdent(mdEncodeAttr(t).replace(/^\n+|\n+$/g, '')) + '</code></pre>';
+      } else if (t = token[6]) {
+        if (t.match(/\./)) token[5] = token[5].replace(/^\d+/gm, '');
+        inner = snarkdown(mdOutdent(token[5].replace(/^\s*[>*+.-]/gm, '')));
+        if (t == '>') t = 'blockquote';
+        else { t = t.match(/\./) ? 'ol' : 'ul'; inner = inner.replace(/^(.*)(\n|$)/gm, '<li>$1</li>'); }
+        chunk = '<' + t + '>' + inner + '</' + t + '>';
+      } else if (token[8]) {
+        chunk = `<img src="${mdEncodeAttr(token[8])}" alt="${mdEncodeAttr(token[7])}">`;
+      } else if (token[10]) {
+        out = out.replace('<a>', `<a href="${mdEncodeAttr(token[11] || links[prev.toLowerCase()])}">`);
+        chunk = flush() + '</a>';
+      } else if (token[9]) {
+        chunk = '<a>';
+      } else if (token[12] || token[14]) {
+        t = 'h' + (token[14] ? token[14].length : (token[13][0] == '=' ? 1 : 2));
+        chunk = '<' + t + '>' + snarkdown(token[12] || token[15], links) + '</' + t + '>';
+      } else if (token[16]) {
+        chunk = '<code>' + mdEncodeAttr(token[16]) + '</code>';
+      } else if (token[17] || token[1]) {
+        chunk = tag(token[17] || '--');
+      }
+      out += prev;
+      out += chunk;
+    }
+    return (out + md.substring(last) + flush()).replace(/^\n+|\n+$/g, '');
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  // Defense-in-depth: snarkdown's output is mostly safe (URLs are HTML-encoded),
+  // but it doesn't reject javascript:/data:/vbscript: URL schemes. Strip them, plus any on*= handlers.
+  function sanitizeHTML(html) {
+    return html
+      .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+      .replace(/(href|src)\s*=\s*"(?:\s*(?:javascript|data|vbscript):)[^"]*"/gi, '$1="#"')
+      .replace(/(href|src)\s*=\s*'(?:\s*(?:javascript|data|vbscript):)[^']*'/gi, "$1='#'");
+  }
+  // GFM tables (snarkdown doesn't support them). Pre-process to inline HTML
+  // before snarkdown — snarkdown has no `|` patterns, so it leaves them alone.
+  function processTables(md) {
+    const lines = md.split('\n');
+    const out = [];
+    const sepRe = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/;
+    const splitCells = (line) =>
+      line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+    let i = 0;
+    while (i < lines.length) {
+      if (i + 1 < lines.length && sepRe.test(lines[i + 1]) && lines[i].includes('|')) {
+        const header = splitCells(lines[i]);
+        const aligns = splitCells(lines[i + 1]).map(c => {
+          const l = c.startsWith(':'), r = c.endsWith(':');
+          return (l && r) ? 'center' : r ? 'right' : l ? 'left' : null;
+        });
+        const rows = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].trim() !== '' && lines[j].includes('|')) {
+          rows.push(splitCells(lines[j]));
+          j++;
+        }
+        const cellTag = (tag, cells) => cells.map((c, k) => {
+          const a = aligns[k];
+          return `<${tag}${a ? ` style="text-align:${a}"` : ''}>${snarkdown(c)}</${tag}>`;
+        }).join('');
+        let html = '<table><thead><tr>' + cellTag('th', header) + '</tr></thead><tbody>';
+        for (const row of rows) html += '<tr>' + cellTag('td', row) + '</tr>';
+        html += '</tbody></table>';
+        out.push(html);
+        i = j;
+      } else {
+        out.push(lines[i]);
+        i++;
+      }
+    }
+    return out.join('\n');
+  }
+
+  function renderMarkdown(md) {
+    return sanitizeHTML(snarkdown(processTables(escapeHTML(md))));
+  }
+
   // ---------- Shared helpers ----------
   function setStatus(el, text, cls = '') {
     el.textContent = text;
@@ -764,12 +925,10 @@
   // PROMPT API
   // ============================================================
   const promptStatus = $('prompt-status');
-  const promptModel = $('prompt-model');
   const logEl = $('log');
   const inputEl = $('input');
   const sendBtn = $('send');
   const resetBtn = $('reset');
-  const cloneBtn = $('clone');
   const tempEl = $('temperature');
   const topKEl = $('topK');
   const systemEl = $('system-prompt');
@@ -984,6 +1143,7 @@
     }
 
     const out = addMessage('assistant', '');
+    let raw = '';
     generating = true;
     chatAbort = new AbortController();
     callOpts.signal = chatAbort.signal;
@@ -993,7 +1153,8 @@
     try {
       const stream = session.promptStreaming(messageContent, callOpts);
       for await (const chunk of stream) {
-        out.textContent += chunk;
+        raw += chunk;
+        out.innerHTML = renderMarkdown(raw);
         logEl.scrollTop = logEl.scrollHeight;
       }
       // Clear attachments after a successful send (they're now in conversation history).
@@ -1018,24 +1179,64 @@
 
   sendBtn.addEventListener('click', send);
   resetBtn.addEventListener('click', () => { logEl.innerHTML = ''; createSession(); });
-  cloneBtn.addEventListener('click', async () => {
-    if (!session) return;
-    try {
-      const clone = await session.clone();
-      try { session.destroy(); } catch {}
-      session = clone;
-      addMessage('assistant', '[session cloned — context preserved, fresh continuation]');
-      updateUsage();
-    } catch (e) {
-      addMessage('error', `clone() failed: ${e.message}`);
-    }
-  });
   inputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
   [tempEl, topKEl, multimodalEl].forEach(el => el.addEventListener('change', createSession));
 
   initPrompt();
+
+  // ---------- Shared probe ----------
+  const PROBE_CODES = ['ar','bg','bn','cs','da','de','el','en','es','fi','fr','hi','hr','hu','id','it','iw','ja','kn','ko','lt','mr','nl','no','pl','pt','ro','ru','sk','sl','sv','ta','te','th','tr','uk','vi','zh','zh-Hant'];
+
+  function renderProbe(containerEl, results) {
+    containerEl.style.display = 'flex';
+    const out = containerEl.querySelector('.out');
+    const grouped = {};
+    for (const r of results) (grouped[r.status] ||= []).push(r.lang);
+    const lines = [];
+    const order = ['available','readily-available','downloadable','downloading','unavailable'];
+    for (const k of order) {
+      if (grouped[k]) lines.push(`${k} (${grouped[k].length}): ${grouped[k].join(', ')}`);
+    }
+    for (const k of Object.keys(grouped)) {
+      if (!order.includes(k)) lines.push(`${k} (${grouped[k].length}): ${grouped[k].join(', ')}`);
+    }
+    out.textContent = lines.join('\n');
+  }
+
+  document.querySelectorAll('.hide-probe').forEach(btn => {
+    btn.addEventListener('click', () => { $(btn.dataset.target).style.display = 'none'; });
+  });
+
+  $('prompt-probe').addEventListener('click', async () => {
+    if (!('LanguageModel' in self)) return;
+    const container = $('prompt-probe-out');
+    container.style.display = 'flex';
+    container.querySelector('.out').textContent = 'probing…';
+    const results = await Promise.all(PROBE_CODES.map(async lang => {
+      try {
+        const status = await LanguageModel.availability({ expectedInputs: [{ type: 'text', languages: [lang] }] });
+        return { lang, status };
+      } catch (e) { return { lang, status: 'error' }; }
+    }));
+    renderProbe(container, results);
+  });
+
+  $('tr-probe').addEventListener('click', async () => {
+    if (!('Translator' in self)) return;
+    const src = $('tr-from').value.trim() || 'en';
+    const container = $('tr-probe-out');
+    container.style.display = 'flex';
+    container.querySelector('.out').textContent = `probing ${src} → …`;
+    const results = await Promise.all(PROBE_CODES.map(async lang => {
+      try {
+        const status = await Translator.availability({ sourceLanguage: src, targetLanguage: lang });
+        return { lang, status };
+      } catch (e) { return { lang, status: 'error' }; }
+    }));
+    renderProbe(container, results);
+  });
 
   // ============================================================
   // SUMMARIZER
