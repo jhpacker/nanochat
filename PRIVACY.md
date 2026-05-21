@@ -9,7 +9,7 @@ NanoChat is a Chrome extension that lets you chat with Chrome's built-in on-devi
 - **No data leaves your device.** NanoChat makes zero network requests. The Manifest V3 content security policy declares `connect-src 'none'`, which blocks `fetch`, `XMLHttpRequest`, WebSocket, and similar APIs at the browser level.
 - **No analytics, no telemetry, no accounts, no third-party services.**
 - **Your chat history is stored locally and encrypted at rest.**
-- **The developer (Jason Packer) cannot see, collect, or access anything you do in NanoChat.**
+- **The developer (Quantable) cannot see, collect, or access anything you do in NanoChat.**
 
 ## What NanoChat stores, and where
 
@@ -74,4 +74,4 @@ Material changes will be reflected by updating the "Last updated" date above and
 
 ## Contact
 
-Questions about this policy or the extension: open an issue on the GitHub repository, or email jhpacker@gmail.com.
+Questions about this policy or the extension: open an issue on the GitHub repository, or email jason@quantable.com.
