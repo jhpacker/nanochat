@@ -287,7 +287,7 @@
     background: var(--panel);
     margin-right: 4px;
   }
-  /* Right-click context card (selection / page passed in from background.js) */
+  /* Right-click context card (page passed in from background.js) */
   #context-card {
     margin: 0 16px 8px;
     padding: 8px 10px;

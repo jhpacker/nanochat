@@ -15,18 +15,6 @@
   // → scripting can't run. Offer only "Open NanoChat".
   const restricted = !tab || !tab.url || /^(chrome|edge|about|view-source|chrome-extension|file|devtools):/i.test(tab.url);
 
-  // Probe for a current selection so we can disable that button when empty.
-  let selectionText = '';
-  if (!restricted) {
-    try {
-      const [result] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => (window.getSelection ? window.getSelection().toString() : ''),
-      });
-      selectionText = (result && result.result) || '';
-    } catch {}
-  }
-
   render();
 
   function render() {
@@ -47,49 +35,31 @@
 
     root.append(makeHeader(tab.title || tab.url));
 
-    const imgToggle = makeImageToggle();
-    root.append(imgToggle.el);
-
-    const summarize = makeAction(
+    root.append(makeAction(
       'Summarize this page',
       'One-shot summary, auto-sent.',
-      () => invoke('summarize-page', { includeImages: imgToggle.checked() }),
-    );
-    root.append(summarize);
-
-    const askSel = makeAction(
-      'Ask about selection',
-      selectionText ? `${selectionText.length.toLocaleString()} chars selected` : 'No text is selected on this page',
-      () => invoke('ask-selection'),
-    );
-    if (!selectionText) askSel.disabled = true;
-    root.append(askSel);
-
-    const askPage = makeAction(
+      () => invoke('summarize-page', { includeImages: false }),
+    ));
+    root.append(makeAction(
+      'Summarize this page (with images)',
+      'Captions up to 10 large images first. (experimental)',
+      () => invoke('summarize-page', { includeImages: true }),
+    ));
+    root.append(makeAction(
       'Ask about this page',
-      'Load page text into a new chat.',
-      () => invoke('ask-page', { includeImages: imgToggle.checked() }),
-    );
-    root.append(askPage);
+      'Load page content into a new chat.',
+      () => invoke('ask-page', { includeImages: false }),
+    ));
+    root.append(makeAction(
+      'Ask about this page (with images)',
+      'Loads page + captioned images. (experimental)',
+      () => invoke('ask-page', { includeImages: true }),
+    ));
 
     const div = document.createElement('div');
     div.className = 'divider';
     root.append(div);
     root.append(makeOpenRow());
-  }
-
-  function makeImageToggle() {
-    const wrap = document.createElement('label');
-    wrap.className = 'toggle';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    const lbl = document.createElement('span');
-    lbl.textContent = 'Include large images';
-    const sub = document.createElement('span');
-    sub.className = 'sub';
-    sub.textContent = 'Affects page actions only. Up to 4 images, cross-origin images may be skipped.';
-    wrap.append(cb, lbl, sub);
-    return { el: wrap, checked: () => cb.checked };
   }
 
   function makeHeader(title) {
@@ -125,7 +95,7 @@
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'link';
-    open.textContent = 'Open NanoChat ›';
+    open.textContent = 'Open New NanoChat ›';
     open.addEventListener('click', async () => {
       await chrome.runtime.sendMessage({ type: 'nanochat:open', windowId: tab && tab.windowId });
       window.close();
@@ -148,7 +118,6 @@
         action,
         tab: { id: tab.id, title: tab.title, url: tab.url, windowId: tab.windowId },
         options: {
-          selectionText: action === 'ask-selection' ? selectionText : undefined,
           includeImages: !!extra.includeImages,
         },
       });

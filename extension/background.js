@@ -1,8 +1,8 @@
 const NANOCHAT_URL = chrome.runtime.getURL('index.html');
 const PENDING_KEY = 'nanochat_pending_context';
 const MAX_CTX_CHARS = 30000;
-const IMAGE_MAX = 4;
-const IMAGE_MIN_SIDE = 200;
+const IMAGE_MAX = 10;
+const IMAGE_MIN_AREA = 200 * 200;
 const IMAGE_MAX_EDGE = 512;
 
 function truncate(s) {
@@ -23,13 +23,13 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ['page', 'selection'],
   });
   chrome.contextMenus.create({
-    id: 'nanochat-ask-selection',
-    title: 'Ask NanoChat about selection',
-    contexts: ['selection'],
-  });
-  chrome.contextMenus.create({
     id: 'nanochat-ask-page',
     title: 'Ask NanoChat about this page',
+    contexts: ['page'],
+  });
+  chrome.contextMenus.create({
+    id: 'nanochat-ask-page-images',
+    title: 'Ask NanoChat about this page (with images)',
     contexts: ['page'],
   });
 });
@@ -97,7 +97,7 @@ async function openOrFocusNanoChat(preferredWindowId) {
 // Cross-origin images without CORS taint the canvas and convertToBlob throws;
 // those are counted as `skipped` rather than fetched (preserves the app's
 // "no network calls" promise).
-async function extractPageContent({ includeImages, maxImages, minSide, maxEdge }) {
+async function extractPageContent({ includeImages, maxImages, minArea, maxEdge }) {
   const text = document.body ? document.body.innerText : '';
   const title = document.title;
   const url = location.href;
@@ -112,7 +112,7 @@ async function extractPageContent({ includeImages, maxImages, minSide, maxEdge }
         const rect = img.getBoundingClientRect();
         return { img, w: rect.width, h: rect.height, area: rect.width * rect.height };
       })
-      .filter(c => c.w >= minSide && c.h >= minSide)
+      .filter(c => c.area >= minArea)
       .filter(c => c.img.complete && c.img.naturalWidth > 0)
       .sort((a, b) => b.area - a.area);
 
@@ -161,7 +161,7 @@ async function capturePageContent(tabId, { includeImages = false } = {}) {
       args: [{
         includeImages,
         maxImages: IMAGE_MAX,
-        minSide: IMAGE_MIN_SIDE,
+        minArea: IMAGE_MIN_AREA,
         maxEdge: IMAGE_MAX_EDGE,
       }],
     });
@@ -171,35 +171,13 @@ async function capturePageContent(tabId, { includeImages = false } = {}) {
   }
 }
 
-async function captureSelectionText(tabId) {
-  try {
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => (window.getSelection ? window.getSelection().toString() : ''),
-    });
-    return result.result || '';
-  } catch {
-    return '';
-  }
-}
-
 // Single entry point used by both the right-click menu and the toolbar popup.
 async function performAction(action, tab, options = {}) {
   if (!tab || !tab.id) return false;
-  const { selectionText, includeImages = false } = options;
+  const { includeImages = false } = options;
   let context;
 
-  if (action === 'ask-selection') {
-    const text = selectionText ?? await captureSelectionText(tab.id);
-    if (!text) return false;
-    context = {
-      kind: 'selection',
-      text: truncate(text),
-      title: tab.title || '',
-      url: tab.url || '',
-      ts: Date.now(),
-    };
-  } else if (action === 'ask-page') {
+  if (action === 'ask-page') {
     const page = await capturePageContent(tab.id, { includeImages });
     context = {
       kind: 'page',
@@ -212,16 +190,13 @@ async function performAction(action, tab, options = {}) {
     };
   } else if (action === 'summarize-page') {
     const page = await capturePageContent(tab.id, { includeImages });
-    const withImages = includeImages && page.images.length > 0;
     context = {
       kind: 'page',
       text: truncate(page.text),
       title: page.title || tab.title || '',
       url: page.url || tab.url || '',
       ts: Date.now(),
-      prefill: withImages
-        ? 'Summarize this page concisely (3–5 bullet points). Briefly describe any notable images.'
-        : 'Summarize this page concisely (3–5 bullet points).',
+      prefill: 'Summarize this page concisely (3–5 bullet points).',
       autoSend: true,
       images: page.images,
       imageStats: page.imageStats,
@@ -255,14 +230,14 @@ async function performAction(action, tab, options = {}) {
 const MENU_ID_TO_ACTION = {
   'nanochat-summarize-page':         { action: 'summarize-page', includeImages: false },
   'nanochat-summarize-page-images':  { action: 'summarize-page', includeImages: true },
-  'nanochat-ask-selection':          { action: 'ask-selection' },
   'nanochat-ask-page':               { action: 'ask-page', includeImages: false },
+  'nanochat-ask-page-images':        { action: 'ask-page', includeImages: true },
 };
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const m = MENU_ID_TO_ACTION[info.menuItemId];
   if (!m) return;
-  await performAction(m.action, tab, { selectionText: info.selectionText, includeImages: m.includeImages });
+  await performAction(m.action, tab, { includeImages: m.includeImages });
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

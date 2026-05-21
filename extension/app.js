@@ -561,18 +561,19 @@
       inputEl.placeholder = 'Type a message. Enter to send, Shift+Enter for newline.';
       return;
     }
-    const { kind, text, title, url, images, imageStats } = pendingContext;
+    const { text, title, url, images, imageStats, captioning } = pendingContext;
     const safeTitle = escapeHtmlSafe(title || url || 'webpage');
     const safeUrl = escapeHtmlSafe(url || '');
     const preview = text.length > 240 ? text.slice(0, 240) + '…' : text;
     let imgBadge = '';
     if (images && images.length > 0) {
       const skipped = imageStats && imageStats.skipped > 0 ? ` · ${imageStats.skipped} skipped` : '';
-      imgBadge = `<span class="ctx-meta">· ${images.length} image${images.length === 1 ? '' : 's'}${skipped}</span>`;
+      const capState = captioning ? ' · captioning…' : '';
+      imgBadge = `<span class="ctx-meta">· ${images.length} image${images.length === 1 ? '' : 's'}${skipped}${capState}</span>`;
     }
     contextCardEl.innerHTML = `
       <div class="ctx-head">
-        <span class="ctx-label">${kind === 'selection' ? 'Selection from' : 'Page'}</span>
+        <span class="ctx-label">Page</span>
         <a class="ctx-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${safeTitle}</a>
         <span class="ctx-meta">${text.length.toLocaleString()} chars</span>
         ${imgBadge}
@@ -582,27 +583,103 @@
     `;
     contextCardEl.style.display = 'block';
     contextCardEl.querySelector('.ctx-dismiss').addEventListener('click', clearPendingContext);
-    inputEl.placeholder = `Ask a question about this ${kind}…`;
+    inputEl.placeholder = 'Ask a question about this page…';
   }
 
   function clearPendingContext() {
-    // If the context brought its own image attachments, drop them too — the
-    // user is dismissing the whole package. (Manually attached images get
-    // wiped along with this, but that's a niche edge case.)
-    if (pendingContext && pendingContext.images && pendingContext.images.length > 0) {
-      for (const a of attachedImages) URL.revokeObjectURL(a.url);
-      attachedImages = [];
-      renderImgPreview();
-    }
     pendingContext = null;
     renderContextCard();
   }
 
   function buildContextPrefix(ctx) {
-    const header = ctx.kind === 'selection'
-      ? `Context — selection from "${ctx.title || ctx.url || 'webpage'}"${ctx.url ? ` (${ctx.url})` : ''}:`
-      : `Context — page "${ctx.title || ctx.url || 'webpage'}"${ctx.url ? ` (${ctx.url})` : ''}:`;
-    return `${header}\n\n${ctx.text}\n\n---\n\n`;
+    const header = `Context — page "${ctx.title || ctx.url || 'webpage'}"${ctx.url ? ` (${ctx.url})` : ''}:`;
+    let body = ctx.text || '';
+    const captions = (ctx.imageCaptions || []).filter(Boolean);
+    if (captions.length > 0) {
+      const total = captions.length;
+      const blocks = captions.map((cap, i) => {
+        const altSuffix = cap.alt ? ` (alt: "${cap.alt}")` : '';
+        return `[image ${i + 1}/${total}]\n${cap.caption}${altSuffix}\n[/image]`;
+      });
+      const section = `Images on this page:\n\n${blocks.join('\n\n')}`;
+      body = body ? `${body}\n\n${section}` : section;
+    }
+    return `${header}\n\n${body}\n\n---\n\n`;
+  }
+
+  // Decodes a `data:<mime>;base64,<b64>` URL into a Blob without using fetch().
+  // The extension's CSP sets `connect-src 'none'`, which blocks `fetch(dataUrl)`.
+  function dataUrlToBlob(dataUrl) {
+    const m = /^data:([^;,]+)(?:;([^,]*))?,(.*)$/.exec(dataUrl || '');
+    if (!m) throw new Error('not a data URL');
+    const mime = m[1] || 'application/octet-stream';
+    const isBase64 = (m[2] || '').split(';').includes('base64');
+    const payload = m[3] || '';
+    let bytes;
+    if (isBase64) {
+      const bin = atob(payload);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(payload));
+    }
+    return new Blob([bytes], { type: mime });
+  }
+
+  // Pre-describes page images one-by-one with a short-lived multimodal session
+  // per image (avoids cross-image context bleed). Captions get folded into the
+  // seeded context text by buildContextPrefix so the chat history stays text-only
+  // and survives regenerate / reload.
+  async function captionPageImages(images) {
+    if (!images || images.length === 0) return [];
+    if (!('LanguageModel' in self)) {
+      addMessage('error', 'Image captioning skipped: LanguageModel not available.');
+      return [];
+    }
+    try {
+      const avail = await LanguageModel.availability({
+        expectedInputs: [{ type: 'text' }, { type: 'image' }],
+      });
+      if (avail === 'unavailable') {
+        addMessage('error', 'Image captioning skipped: multimodal LanguageModel reports "unavailable" (the on-device model variant may not support image input — check chrome://on-device-internals).');
+        return [];
+      }
+      if (avail === 'downloadable' || avail === 'downloading') {
+        addMessage('error', `Image captioning skipped: multimodal model is "${avail}". Wait for it to finish downloading and try again.`);
+        return [];
+      }
+    } catch (e) {
+      addMessage('error', `Image captioning availability check failed: ${e.message}`);
+      return [];
+    }
+    const captions = [];
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      setStatus(promptStatus, `captioning image ${i + 1}/${images.length}…`, 'warn');
+      let s = null;
+      try {
+        s = await LanguageModel.create({
+          expectedInputs: [{ type: 'text' }, { type: 'image' }],
+          monitor: makeMonitor(promptStatus, 'downloading'),
+        });
+        const blob = dataUrlToBlob(img.dataUrl);
+        const out = await s.prompt([{
+          role: 'user',
+          content: [
+            { type: 'text', value: 'Describe this image in 2–4 sentences. Cover the subject, setting, notable visual details, any visible text, and overall mood or context. Be specific but concise. No preamble.' },
+            { type: 'image', value: blob },
+          ],
+        }]);
+        const cleaned = (out || '').trim().replace(/\s+/g, ' ');
+        if (cleaned) captions.push({ caption: cleaned, alt: img.alt || '' });
+        else addMessage('error', `Image ${i + 1}/${images.length}: model returned empty caption.`);
+      } catch (e) {
+        addMessage('error', `Image ${i + 1}/${images.length} captioning failed: ${e.message}`);
+      } finally {
+        try { s?.destroy(); } catch {}
+      }
+    }
+    return captions;
   }
 
   // Consumes a pending context: renders the card + prefill immediately (so the
@@ -627,29 +704,27 @@
     const promptTab = document.querySelector('.tab[data-tab="prompt"]');
     if (promptTab && !promptTab.classList.contains('active')) promptTab.click();
 
-    if (options.skipNewChat) {
-      // Boot path: initPrompt is creating the session right now. Force the
-      // multimodal flag before that create() runs.
-      if (hasImages && !multimodalEl.checked) multimodalEl.checked = true;
-    } else {
-      await startNewChat({ keepContext: true, forceMultimodal: hasImages });
+    if (!options.skipNewChat) {
+      await startNewChat({ keepContext: true });
     }
 
     if (hasImages) {
-      // Drop any stale attachments, then convert the data-URL image payloads
-      // back to Blobs so dispatchPrompt sends them as multimodal parts.
-      for (const a of attachedImages) URL.revokeObjectURL(a.url);
-      attachedImages = [];
-      for (const img of ctx.images) {
-        try {
-          const blob = await (await fetch(img.dataUrl)).blob();
-          attachedImages.push({ blob, url: URL.createObjectURL(blob) });
-        } catch {
-          // Bad payload — skip silently.
-        }
-      }
-      renderImgPreview();
+      // Pre-describe each image to a single-sentence caption and fold the
+      // captions into the seeded context text. Keeps the chat history text-only
+      // (so regenerate / reload still see the image info) and avoids relying
+      // on Gemini Nano to summarize text + describe images in one shot.
+      ctx.captioning = true;
+      renderContextCard();
+      const captions = await captionPageImages(ctx.images);
+      // User may have dismissed the context (or another one arrived) while
+      // we were captioning — abandon if so.
+      if (pendingContext !== ctx) return;
+      ctx.imageCaptions = captions;
+      ctx.captioning = false;
+      setStatus(promptStatus, 'ready', 'ok');
+      renderContextCard();
     }
+
     inputEl.focus();
     inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
     if (ctx.autoSend) {
@@ -1209,7 +1284,11 @@
     // Fold a pending right-click context into the *persisted* user message so
     // the chat is self-contained (regenerate / reload still sees it).
     let effectiveText = text;
-    if (pendingContext && pendingContext.text) {
+    const ctxHasContent = pendingContext && (
+      pendingContext.text ||
+      (pendingContext.imageCaptions && pendingContext.imageCaptions.length > 0)
+    );
+    if (ctxHasContent) {
       effectiveText = buildContextPrefix(pendingContext) + (text || '');
       clearPendingContext();
     }
@@ -1314,14 +1393,12 @@
     wireOptionPersistence();
 
     // Take any pending right-click/popup context BEFORE initPrompt so we can
-    // render the card + prefill immediately, and so initPrompt's create()
-    // opens a session with the correct (multimodal-aware) options. Without
-    // this, the context sat behind a slow LanguageModel.create() and the user
-    // saw a blank NanoChat tab.
+    // render the card + prefill immediately. Without this, the context sat
+    // behind a slow LanguageModel.create() and the user saw a blank NanoChat
+    // tab. Images get captioned to text by consumePendingContext below, so the
+    // chat session itself stays text-only.
     const pending = await takePendingContext();
     if (pending) {
-      const hasImages = !!(pending.images && pending.images.length > 0);
-      if (hasImages && !multimodalEl.checked) multimodalEl.checked = true;
       pendingContext = pending;
       if (pending.prefill) inputEl.value = pending.prefill;
       renderContextCard();

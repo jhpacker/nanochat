@@ -74,24 +74,6 @@ body {
   color: var(--muted);
   margin-top: 2px;
 }
-.toggle {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 8px;
-  align-items: start;
-  padding: 6px 8px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-.toggle input { margin-top: 2px; }
-.toggle .sub {
-  grid-column: 2;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
-  margin-top: 2px;
-}
 
 .divider {
   border-top: 1px solid var(--border);

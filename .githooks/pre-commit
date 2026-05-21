@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Rebuilds the root index.html when any of its inputs are staged, and re-stages
+# the result so the commit stays internally consistent. Enable per-clone with:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+needs_rebuild=$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -E '^extension/(index\.html|app\.js|styles\.css)$' || true)
+
+if [ -z "$needs_rebuild" ]; then
+  exit 0
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found; install Node to commit changes to extension/{index.html,app.js,styles.css}" >&2
+  exit 1
+fi
+
+echo "pre-commit: rebuilding index.html"
+node build.js
+git add index.html

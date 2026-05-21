@@ -2,7 +2,7 @@
 
 A private, on-device AI chat app — like a nano version of ChatGPT — built on Chrome's built-in Gemini Nano model. Also includes Summarizer, Translator, Writer, Rewriter, Proofreader, and Language Detector tools, each backed by a Chrome built-in AI API.
 
-100% local — runs entirely on your machine. No network calls, no server, no API keys.
+100% local — runs entirely on your machine. No network calls, no server, no API keys. Chat history is encrypted at rest (AES-GCM, key in IndexedDB).
 
 ## Requirements
 
@@ -11,47 +11,43 @@ A private, on-device AI chat app — like a nano version of ChatGPT — built on
 - 16 GB RAM **or** a GPU with 4+ GB VRAM
 - The first time you use a feature, Chrome may need to download the model component. Watch progress at `chrome://on-device-internals`.
 
-## Download and open
+## Install
 
-### Option 1 — copy/paste (easiest, no git, no download)
+NanoChat ships in two forms. The **extension** adds a toolbar popup and right-click menu so you can summarize or ask questions about the current page. The **single-file** form is one HTML file you double-click — no install, no permissions.
 
-1. Open the raw HTML: https://raw.githubusercontent.com/jhpacker/nanochat/main/index.html
-2. Select all (`Cmd/Ctrl+A`) and copy (`Cmd/Ctrl+C`)
-3. Paste into any text editor and save as `nanochat.html` anywhere on your machine
-4. Double-click the file to open it in Chrome
+### Extension (recommended — adds page actions)
 
-### Option 2 — download as ZIP
+1. Clone or [download a ZIP](https://github.com/jhpacker/nanochat) of this repo and unzip it.
+2. Open `chrome://extensions`, enable **Developer mode** (top right), click **Load unpacked**, and select the [`extension/`](extension/) folder.
+3. Click the NanoChat toolbar icon to chat, or right-click any page for **Summarize / Ask about this page** entries. Each comes in a plain and a *(with images)* variant — the latter captions up to 10 large on-page images with the multimodal model and folds the descriptions into the chat context.
 
-1. Go to https://github.com/jhpacker/nanochat
-2. Click the green **Code** button → **Download ZIP**
-3. Unzip it, then double-click `index.html`
+### Single-file (no install)
 
-### Option 3 — clone with git
+Pick whichever is easiest:
 
-```bash
-git clone https://github.com/jhpacker/nanochat.git
-open nanochat/index.html
-```
+- **Copy/paste:** open [`index.html` raw](https://raw.githubusercontent.com/jhpacker/nanochat/main/index.html), select all + copy, paste into a text editor, save as `nanochat.html`, double-click to open in Chrome.
+- **ZIP:** [download the repo](https://github.com/jhpacker/nanochat), unzip, double-click the root `index.html`.
+- **Git:** `git clone https://github.com/jhpacker/nanochat.git && open nanochat/index.html`
 
-### About the file:// URL
-
-However you get the file onto your disk, opening it gives you a URL like:
-
-```
-file:///Users/yourname/Downloads/nanochat.html
-```
-
-That's it — no web server required. If your default browser isn't Chrome, right-click the file → **Open With → Google Chrome**.
+You'll get a `file:///…/nanochat.html` URL — no web server required. If Chrome isn't your default browser, right-click the file → **Open With → Google Chrome**.
 
 ## Development
 
-The root `index.html` is generated. The source of truth is the [`extension/`](extension/) directory (Manifest V3 extension form). To rebuild the single-file `index.html` after editing files under `extension/`:
+The root `index.html` is generated. The source of truth is the [`extension/`](extension/) directory (Manifest V3 extension form). To rebuild the single-file `index.html` after editing the chat-app sources under `extension/`:
 
 ```bash
 node build.js
 ```
 
-This inlines `extension/styles.css` and `extension/app.js` into `extension/index.html` and writes the result to the root `index.html`.
+This inlines `extension/styles.css` and `extension/app.js` into `extension/index.html` and writes the result to the root `index.html`. The extension shell (`background.js`, `popup.*`, `manifest.json`) is not part of the single-file build.
+
+The root `index.html` is checked in (it's the artifact powering the no-install copy/paste and ZIP flows above). A pre-commit hook keeps it in sync automatically — enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+With that set, committing any change to `extension/{index.html,app.js,styles.css}` reruns `node build.js` and re-stages the root `index.html`.
 
 ## Troubleshooting
 
