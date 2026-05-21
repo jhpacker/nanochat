@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "NanoChat",
+  "version": "1.0.0",
+  "description": "Private on-device AI chat using Chrome's built-in Gemini Nano. Also: summarize, translate, write, rewrite, proofread, detect language.",
+  "minimum_chrome_version": "138",
+  "permissions": ["storage"],
+  "content_security_policy": {
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  },
+  "action": {
+    "default_title": "Open NanoChat"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

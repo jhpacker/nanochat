@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NanoChat — Using Chrome's built-in LLM</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header>
+  <h1>NanoChat <span style="font-weight:400;color:var(--muted)">— Using Chrome's built-in LLM</span></h1>
+  <span class="status" title="All inference runs locally on-device via Gemini Nano. No network calls. Chats are saved to chrome.storage.local on your machine only.">100% local · no network calls</span>
+  <button id="copy-internals" style="margin-left:auto" title="Browsers block direct navigation to chrome:// URLs from web pages. Click to copy, then paste into your address bar.">chrome://on-device-internals ⧉</button>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="prompt">Prompt (chat)</button>
+  <button class="tab" data-tab="summarizer">Summarizer</button>
+  <button class="tab" data-tab="translator">Translator</button>
+  <button class="tab" data-tab="detector">Lang Detector</button>
+  <button class="tab" data-tab="writer">Writer</button>
+  <button class="tab" data-tab="rewriter">Rewriter</button>
+  <button class="tab" data-tab="proofreader">Proofreader</button>
+</nav>
+
+<!-- ============================================================ -->
+<!-- PROMPT API                                                   -->
+<!-- ============================================================ -->
+<section class="panel active panel-prompt-layout" id="panel-prompt">
+  <aside class="sidebar" id="prompt-sidebar">
+    <div class="sidebar-header">
+      <button id="new-chat" class="primary">+ New chat</button>
+      <input id="session-search" type="search" placeholder="Search chats…" autocomplete="off">
+    </div>
+    <div id="session-list" class="session-list"></div>
+    <div class="sidebar-footer">
+      <span id="storage-meta"></span>
+      <button id="clear-all-chats" title="Delete all saved chats">Clear all</button>
+    </div>
+  </aside>
+  <div class="chat-main">
+  <div class="info">
+    <b>LanguageModel (Prompt API)</b>
+    <span class="status" id="prompt-status">checking…</span>
+    <br>
+    Multimodal Gemini Nano. Inputs: <code>text</code>, <code>image</code>, <code>audio</code> (audio needs GPU).
+    Stable in extensions since Chrome 138; web origin trial Chrome 148.
+    Sampling params (<code>temperature</code>/<code>topK</code>) work in any extension and on the web from Chrome 148+; on older web Chrome they're silently ignored.
+    Languages: <b>en, ja, es</b>.
+  </div>
+
+  <details style="border-bottom: 1px solid var(--border)">
+    <summary style="padding: 8px 16px; font-size: 13px; color: var(--accent); cursor: pointer; user-select: none;">⚙️ Options (temp, topK, system prompt, JSON schema, probe languages)</summary>
+
+    <div class="controls">
+      <label>temp <input id="temperature" type="number" min="0" max="2" step="0.1" value="0.8"></label>
+      <label>topK <input id="topK" type="number" min="1" max="40" step="1" value="3"></label>
+      <label><input type="checkbox" id="json-mode"> JSON-constrained</label>
+      <label><input type="checkbox" id="multimodal" checked> allow image input</label>
+      <button id="reset">Reset session</button>
+      <button id="prompt-probe">Probe languages</button>
+    </div>
+
+    <div id="prompt-probe-out" class="row col" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <label>Language probe results</label>
+        <button class="hide-probe" data-target="prompt-probe-out">Hide probe</button>
+      </div>
+      <div class="out" style="font-family:ui-monospace,monospace;font-size:11px"></div>
+    </div>
+
+    <div class="row col" style="padding-bottom:0">
+      <label>System prompt</label>
+      <textarea id="system-prompt" rows="2">You are a concise, helpful assistant.</textarea>
+    </div>
+
+    <details style="padding: 0 16px 12px;">
+      <summary>JSON response schema (when "JSON-constrained" is on)</summary>
+      <textarea id="json-schema" rows="6">{
+  "type": "object",
+  "properties": {
+    "sentiment": { "type": "string", "enum": ["positive", "negative", "neutral"] },
+    "confidence": { "type": "number" }
+  },
+  "required": ["sentiment", "confidence"]
+}</textarea>
+    </details>
+  </details>
+
+  <div id="log"></div>
+
+  <div class="img-preview" id="img-preview"></div>
+  <div class="img-preview" id="audio-preview"></div>
+
+  <div id="usage">
+    <span id="usage-text">tokens: 0 / 0</span>
+    <div class="bar"><div class="fill" id="usage-bar"></div></div>
+    <span id="usage-pct">0%</span>
+    <span id="usage-defaults"></span>
+  </div>
+
+  <footer>
+    <input type="file" id="img-input" accept="image/*" multiple style="display:none">
+    <input type="file" id="audio-input" accept="audio/*" multiple style="display:none">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <button id="img-btn" title="Attach image (multimodal)">+ img</button>
+      <button id="audio-btn" title="Attach audio clip (multimodal — GPU required)">+ audio</button>
+    </div>
+    <textarea id="input" placeholder="Type a message. Enter to send, Shift+Enter for newline." rows="2"></textarea>
+    <button id="send" class="primary" disabled>Send</button>
+  </footer>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SUMMARIZER                                                   -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-summarizer">
+  <div class="info">
+    <b>Summarizer</b>
+    <span class="status" id="summarizer-status">not checked</span>
+    <br>
+    Condenses long-form content. Stable in Chrome 138+. <b>type</b>:
+    tldr/key-points/teaser/headline. <b>format</b>: markdown/plain-text.
+    <b>length</b>: short/medium/long. No documented input cap, but very long inputs may be truncated.
+  </div>
+  <div class="controls">
+    <label>type
+      <select id="sum-type">
+        <option>key-points</option><option>tldr</option><option>teaser</option><option>headline</option>
+      </select>
+    </label>
+    <label>format
+      <select id="sum-format"><option>markdown</option><option>plain-text</option></select>
+    </label>
+    <label>length
+      <select id="sum-length"><option>short</option><option selected>medium</option><option>long</option></select>
+    </label>
+    <label>output lang <input type="text" id="sum-out-lang" placeholder="en"></label>
+    <button id="sum-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Shared context (optional)</label>
+    <textarea id="sum-shared" rows="2" placeholder="e.g. 'A technical article aimed at developers.'"></textarea>
+  </div>
+  <div class="row col">
+    <label>Input text</label>
+    <textarea id="sum-input" rows="10" placeholder="Paste long-form text to summarize…"></textarea>
+  </div>
+  <div class="actions">
+    <button id="sum-run" class="primary">Summarize</button>
+    <button id="sum-stream">Stream</button>
+    <button id="sum-abort">Abort</button>
+    <span class="meta" id="sum-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="sum-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- TRANSLATOR                                                   -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-translator">
+  <div class="info">
+    <b>Translator</b>
+    <span class="status" id="translator-status">not checked</span>
+    <br>
+    Pairwise translator (one source → target per instance). Chrome 138+.
+    Each language pair downloads its own model on first use. Translations are processed sequentially per instance.
+    Supported: ar, bg, bn, cs, da, de, el, en, es, fi, fr, hi, hr, hu, id, it, iw, ja, kn, ko, lt, mr, nl, no, pl, pt, ro, ru, sk, sl, sv, ta, te, th, tr, uk, vi, zh, zh-Hant.
+  </div>
+  <div class="controls">
+    <label>from <input type="text" id="tr-from" value="en" size="6"></label>
+    <label>to <input type="text" id="tr-to" value="es" size="6"></label>
+    <button id="tr-check">Check pair</button>
+    <button id="tr-swap">⇄ Swap</button>
+    <button id="tr-probe">Probe languages</button>
+  </div>
+
+  <div id="tr-probe-out" class="row col" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <label>Language probe results (target from "from" language)</label>
+      <button class="hide-probe" data-target="tr-probe-out">Hide probe</button>
+    </div>
+    <div class="out" style="font-family:ui-monospace,monospace;font-size:11px"></div>
+  </div>
+  <div class="row col">
+    <label>Input</label>
+    <textarea id="tr-input" rows="6" placeholder="Text to translate…">The quick brown fox jumps over the lazy dog.</textarea>
+  </div>
+  <div class="actions">
+    <button id="tr-run" class="primary">Translate</button>
+    <button id="tr-stream">Stream</button>
+    <button id="tr-abort">Abort</button>
+    <span class="meta" id="tr-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="tr-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- LANGUAGE DETECTOR                                            -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-detector">
+  <div class="info">
+    <b>LanguageDetector</b>
+    <span class="status" id="detector-status">not checked</span>
+    <br>
+    Returns ranked <code>{ detectedLanguage, confidence }</code> array. Chrome 138+.
+    Accuracy is poor for very short input (single words / fragments).
+  </div>
+  <div class="controls">
+    <button id="ld-check">Check availability</button>
+    <button id="ld-create">Create detector</button>
+  </div>
+  <div class="row col">
+    <label>Input</label>
+    <textarea id="ld-input" rows="5" placeholder="Type or paste text in any language…">¿Dónde está la biblioteca?</textarea>
+  </div>
+  <div class="actions">
+    <button id="ld-run" class="primary">Detect</button>
+    <span class="meta" id="ld-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Top results</label>
+    <div class="out" id="ld-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- WRITER                                                       -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-writer">
+  <div class="info">
+    <b>Writer</b>
+    <span class="status" id="writer-status">not checked</span>
+    <br>
+    Composes new text from a brief. <b>Origin trial</b> (Chrome 137–148+) — register at
+    <code>developer.chrome.com/origintrials</code> if running on a normal page, or enable the
+    matching chrome://flags. Inputs feed a single one-shot generation; for multi-turn use the Prompt API.
+  </div>
+  <div class="controls">
+    <label>tone
+      <select id="wr-tone"><option>formal</option><option selected>neutral</option><option>casual</option></select>
+    </label>
+    <label>format
+      <select id="wr-format"><option selected>markdown</option><option>plain-text</option></select>
+    </label>
+    <label>length
+      <select id="wr-length"><option>short</option><option selected>medium</option><option>long</option></select>
+    </label>
+    <label>output lang <input type="text" id="wr-out-lang" placeholder="en"></label>
+    <button id="wr-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Shared context</label>
+    <textarea id="wr-shared" rows="2" placeholder="e.g. 'You are writing for a children's science magazine.'"></textarea>
+  </div>
+  <div class="row col">
+    <label>Brief / writing task</label>
+    <textarea id="wr-input" rows="4" placeholder="Describe what to write…">A polite email to my landlord asking when the broken dishwasher will be fixed.</textarea>
+  </div>
+  <div class="actions">
+    <button id="wr-run" class="primary">Write</button>
+    <button id="wr-stream">Stream</button>
+    <button id="wr-abort">Abort</button>
+    <span class="meta" id="wr-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="wr-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- REWRITER                                                     -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-rewriter">
+  <div class="info">
+    <b>Rewriter</b>
+    <span class="status" id="rewriter-status">not checked</span>
+    <br>
+    Rewrites existing text — adjusts tone, length, formality. Origin trial alongside Writer.
+    Useful for "make this more formal", "shorten", etc.
+  </div>
+  <div class="controls">
+    <label>tone
+      <select id="rw-tone">
+        <option>as-is</option><option>more-formal</option><option>more-casual</option>
+      </select>
+    </label>
+    <label>format
+      <select id="rw-format">
+        <option>as-is</option><option>markdown</option><option>plain-text</option>
+      </select>
+    </label>
+    <label>length
+      <select id="rw-length">
+        <option>as-is</option><option>shorter</option><option>longer</option>
+      </select>
+    </label>
+    <button id="rw-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Shared context (optional)</label>
+    <textarea id="rw-shared" rows="2" placeholder="e.g. 'This will be sent to a senior executive.'"></textarea>
+  </div>
+  <div class="row col">
+    <label>Text to rewrite</label>
+    <textarea id="rw-input" rows="5" placeholder="Paste text to rewrite…">hey just wanted to check in real quick to see if u had a chance to look at the doc yet. lmk!</textarea>
+  </div>
+  <div class="actions">
+    <button id="rw-run" class="primary">Rewrite</button>
+    <button id="rw-stream">Stream</button>
+    <button id="rw-abort">Abort</button>
+    <span class="meta" id="rw-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Output</label>
+    <div class="out" id="rw-out"></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- PROOFREADER                                                  -->
+<!-- ============================================================ -->
+<section class="panel" id="panel-proofreader">
+  <div class="info">
+    <b>Proofreader</b>
+    <span class="status" id="proofreader-status">not checked</span>
+    <br>
+    Returns <code>{ correctedInput, corrections[] }</code> with start/end indices and per-error type
+    (grammar/spelling/punctuation). <b>Origin trial</b> only (Chrome 141–145).
+    May be unavailable depending on your channel — Canary/Dev are most reliable.
+  </div>
+  <div class="controls">
+    <label>input lang <input type="text" id="pf-lang" value="en" size="6"></label>
+    <button id="pf-check">Check availability</button>
+  </div>
+  <div class="row col">
+    <label>Text to proofread</label>
+    <textarea id="pf-input" rows="5" placeholder="Type text with errors…">Their going to the store, but they dont know what to by. its alot of decisions to make.</textarea>
+  </div>
+  <div class="actions">
+    <button id="pf-run" class="primary">Proofread</button>
+    <span class="meta" id="pf-meta"></span>
+  </div>
+  <div class="row col">
+    <label>Corrected text</label>
+    <div class="out" id="pf-out"></div>
+  </div>
+  <div class="corrections" id="pf-corrections"></div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

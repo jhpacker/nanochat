@@ -1,6 +1,6 @@
 # NanoChat
 
-A single-file HTML playground for Chrome's built-in on-device AI APIs (Gemini Nano Prompt API, Summarizer, Translator, Writer, Rewriter, Proofreader, Language Detector).
+A private, on-device AI chat app — like a nano version of ChatGPT — built on Chrome's built-in Gemini Nano model. Also includes Summarizer, Translator, Writer, Rewriter, Proofreader, and Language Detector tools, each backed by a Chrome built-in AI API.
 
 100% local — runs entirely on your machine. No network calls, no server, no API keys.
 
@@ -42,6 +42,16 @@ file:///Users/yourname/Downloads/nanochat.html
 ```
 
 That's it — no web server required. If your default browser isn't Chrome, right-click the file → **Open With → Google Chrome**.
+
+## Development
+
+The root `index.html` is generated. The source of truth is the [`extension/`](extension/) directory (Manifest V3 extension form). To rebuild the single-file `index.html` after editing files under `extension/`:
+
+```bash
+node build.js
+```
+
+This inlines `extension/styles.css` and `extension/app.js` into `extension/index.html` and writes the result to the root `index.html`.
 
 ## Troubleshooting
 
