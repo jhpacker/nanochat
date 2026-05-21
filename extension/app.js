@@ -290,10 +290,21 @@
   // Cache of full session bodies for search. Invalidated whenever sessions change.
   let bodyCache = null;
 
-  // Use chrome.storage.local when running as an extension; fall back to localStorage.
-  const storage = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? {
+  // ---------- Storage (encrypted at rest) ----------
+  // chrome.storage.local under MV3, localStorage on file://. Values written via
+  // `storage` are AES-GCM ciphertext; the master key is a non-extractable
+  // CryptoKey kept in IndexedDB. The key bytes never leave the browser's crypto
+  // subsystem, so disk-scrape attackers see only ciphertext. This does NOT
+  // defend against malware running as the user — that adversary just opens the
+  // extension page and reads decrypted state. It does defeat casual inspection
+  // of the Chrome profile dir and stops chat content from being grep-able.
+
+  const rawStorage = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? {
     async get(keys) {
       return new Promise(r => chrome.storage.local.get(keys, v => r(v)));
+    },
+    async getAll() {
+      return new Promise(r => chrome.storage.local.get(null, v => r(v)));
     },
     async set(obj) {
       return new Promise(r => chrome.storage.local.set(obj, r));
@@ -315,6 +326,17 @@
       }
       return out;
     },
+    async getAll() {
+      const out = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        const v = localStorage.getItem(k);
+        if (v != null) {
+          try { out[k] = JSON.parse(v); } catch { /* skip non-JSON keys we didn't write */ }
+        }
+      }
+      return out;
+    },
     async set(obj) {
       for (const k of Object.keys(obj)) localStorage.setItem(k, JSON.stringify(obj[k]));
     },
@@ -331,6 +353,125 @@
       return n;
     }
   };
+
+  const KEY_DB = 'nanochat-keys';
+  const KEY_STORE = 'keys';
+  const KEY_ID = 'master';
+
+  function openKeyDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(KEY_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(KEY_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function idbGet(db, k) {
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(KEY_STORE, 'readonly').objectStore(KEY_STORE).get(k);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function idbPut(db, k, v) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(KEY_STORE, 'readwrite');
+      tx.objectStore(KEY_STORE).put(v, k);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // Lazy + memoized — first storage call kicks this off; everyone else awaits the same promise.
+  let cryptoKeyPromise;
+  function ensureCryptoKey() {
+    if (!cryptoKeyPromise) {
+      cryptoKeyPromise = (async () => {
+        const db = await openKeyDB();
+        let key = await idbGet(db, KEY_ID);
+        if (!key) {
+          key = await crypto.subtle.generateKey(
+            { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+          );
+          await idbPut(db, KEY_ID, key);
+        }
+        return key;
+      })();
+    }
+    return cryptoKeyPromise;
+  }
+
+  function isEncryptedEnvelope(v) {
+    return v && typeof v === 'object' && v._enc === 1 && typeof v.iv === 'string' && typeof v.ct === 'string';
+  }
+  function bytesToB64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+  function b64ToBytes(s) {
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  async function encryptValue(value) {
+    const key = await ensureCryptoKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const pt = new TextEncoder().encode(JSON.stringify(value));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, pt);
+    return { _enc: 1, iv: bytesToB64(iv), ct: bytesToB64(new Uint8Array(ct)) };
+  }
+  async function decryptValue(envelope) {
+    const key = await ensureCryptoKey();
+    const iv = b64ToBytes(envelope.iv);
+    const ct = b64ToBytes(envelope.ct);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+
+  const storage = {
+    async get(keys) {
+      const raw = await rawStorage.get(keys);
+      const out = {};
+      for (const k of Object.keys(raw)) {
+        const v = raw[k];
+        if (isEncryptedEnvelope(v)) {
+          // If IDB was cleared but the storage backend wasn't, the key is gone and
+          // existing ciphertext is unrecoverable. Treat as missing so the app still boots.
+          try { out[k] = await decryptValue(v); }
+          catch (e) { console.warn('nanochat: decrypt failed for', k, e); }
+        } else {
+          // Plaintext from a pre-encryption build — surfaced as-is, re-encrypted on next set().
+          out[k] = v;
+        }
+      }
+      return out;
+    },
+    async set(obj) {
+      const enc = {};
+      for (const k of Object.keys(obj)) enc[k] = await encryptValue(obj[k]);
+      await rawStorage.set(enc);
+    },
+    remove: (keys) => rawStorage.remove(keys),
+    getBytesInUse: () => rawStorage.getBytesInUse(),
+  };
+
+  // One-shot migration: re-encrypt any plaintext nanochat_* values left from older builds.
+  async function migrateToEncrypted() {
+    const all = await rawStorage.getAll();
+    const toEncrypt = {};
+    for (const k of Object.keys(all)) {
+      if (!k.startsWith('nanochat')) continue;
+      // Skip the right-click/popup pending-context handoff — it's intentionally
+      // plaintext (background.js can't decrypt) and is consumed within the same
+      // boot cycle. Encrypting it here would make takePendingContext see an
+      // envelope instead of a context object and silently bail.
+      if (k === 'nanochat_pending_context') continue;
+      if (!isEncryptedEnvelope(all[k])) toEncrypt[k] = all[k];
+    }
+    if (Object.keys(toEncrypt).length) await storage.set(toEncrypt);
+  }
 
   function makeSessionId() {
     return 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -403,6 +544,158 @@
     }
   }
 
+  // ---------- Pending context (from right-click on a page) ----------
+  // background.js writes { kind, text, title, url, ts } to chrome.storage.local
+  // under PENDING_CONTEXT_KEY (plaintext — transient handoff, not chat data).
+  // On consumption it's removed and folded into the next user message so the
+  // chat history stays self-contained (regenerate / reload still see it).
+  const PENDING_CONTEXT_KEY = 'nanochat_pending_context';
+  const contextCardEl = $('context-card');
+  let pendingContext = null;
+
+  function renderContextCard() {
+    if (!contextCardEl) return;
+    if (!pendingContext) {
+      contextCardEl.style.display = 'none';
+      contextCardEl.innerHTML = '';
+      inputEl.placeholder = 'Type a message. Enter to send, Shift+Enter for newline.';
+      return;
+    }
+    const { kind, text, title, url, images, imageStats } = pendingContext;
+    const safeTitle = escapeHtmlSafe(title || url || 'webpage');
+    const safeUrl = escapeHtmlSafe(url || '');
+    const preview = text.length > 240 ? text.slice(0, 240) + '…' : text;
+    let imgBadge = '';
+    if (images && images.length > 0) {
+      const skipped = imageStats && imageStats.skipped > 0 ? ` · ${imageStats.skipped} skipped` : '';
+      imgBadge = `<span class="ctx-meta">· ${images.length} image${images.length === 1 ? '' : 's'}${skipped}</span>`;
+    }
+    contextCardEl.innerHTML = `
+      <div class="ctx-head">
+        <span class="ctx-label">${kind === 'selection' ? 'Selection from' : 'Page'}</span>
+        <a class="ctx-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${safeTitle}</a>
+        <span class="ctx-meta">${text.length.toLocaleString()} chars</span>
+        ${imgBadge}
+        <button class="ctx-dismiss" type="button" title="Dismiss context">×</button>
+      </div>
+      <div class="ctx-preview">${escapeHtmlSafe(preview)}</div>
+    `;
+    contextCardEl.style.display = 'block';
+    contextCardEl.querySelector('.ctx-dismiss').addEventListener('click', clearPendingContext);
+    inputEl.placeholder = `Ask a question about this ${kind}…`;
+  }
+
+  function clearPendingContext() {
+    // If the context brought its own image attachments, drop them too — the
+    // user is dismissing the whole package. (Manually attached images get
+    // wiped along with this, but that's a niche edge case.)
+    if (pendingContext && pendingContext.images && pendingContext.images.length > 0) {
+      for (const a of attachedImages) URL.revokeObjectURL(a.url);
+      attachedImages = [];
+      renderImgPreview();
+    }
+    pendingContext = null;
+    renderContextCard();
+  }
+
+  function buildContextPrefix(ctx) {
+    const header = ctx.kind === 'selection'
+      ? `Context — selection from "${ctx.title || ctx.url || 'webpage'}"${ctx.url ? ` (${ctx.url})` : ''}:`
+      : `Context — page "${ctx.title || ctx.url || 'webpage'}"${ctx.url ? ` (${ctx.url})` : ''}:`;
+    return `${header}\n\n${ctx.text}\n\n---\n\n`;
+  }
+
+  // Consumes a pending context: renders the card + prefill immediately (so the
+  // user sees feedback without waiting for the LM session), then awaits
+  // startNewChat() and optionally autoSends. `options.skipNewChat` lets the
+  // boot path reuse the session initPrompt is about to create, avoiding a
+  // double create()/destroy() race.
+  async function consumePendingContext(ctx, options = {}) {
+    if (!ctx) return;
+    if (!ctx.text && (!ctx.images || ctx.images.length === 0)) return;
+    if (generating) {
+      try { chatAbort?.abort(); } catch {}
+      await new Promise(r => setTimeout(r, 60));
+    }
+    pendingContext = ctx;
+    const hasImages = !!(ctx.images && ctx.images.length > 0);
+
+    // Render UI synchronously so the user sees the card + prefilled input
+    // even while LanguageModel.create() is still running.
+    if (ctx.prefill) inputEl.value = ctx.prefill;
+    renderContextCard();
+    const promptTab = document.querySelector('.tab[data-tab="prompt"]');
+    if (promptTab && !promptTab.classList.contains('active')) promptTab.click();
+
+    if (options.skipNewChat) {
+      // Boot path: initPrompt is creating the session right now. Force the
+      // multimodal flag before that create() runs.
+      if (hasImages && !multimodalEl.checked) multimodalEl.checked = true;
+    } else {
+      await startNewChat({ keepContext: true, forceMultimodal: hasImages });
+    }
+
+    if (hasImages) {
+      // Drop any stale attachments, then convert the data-URL image payloads
+      // back to Blobs so dispatchPrompt sends them as multimodal parts.
+      for (const a of attachedImages) URL.revokeObjectURL(a.url);
+      attachedImages = [];
+      for (const img of ctx.images) {
+        try {
+          const blob = await (await fetch(img.dataUrl)).blob();
+          attachedImages.push({ blob, url: URL.createObjectURL(blob) });
+        } catch {
+          // Bad payload — skip silently.
+        }
+      }
+      renderImgPreview();
+    }
+    inputEl.focus();
+    inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+    if (ctx.autoSend) {
+      // Wait for the LM session to be ready (initPrompt may still be running
+      // its create()). Poll up to ~10s, then attempt to send regardless —
+      // dispatchPrompt bails gracefully if there's no session.
+      for (let i = 0; i < 100 && !session; i++) await new Promise(r => setTimeout(r, 100));
+      send();
+    }
+  }
+
+  // Reads pending context from storage. Returns the context (and removes it)
+  // if this tab is the intended target. Used both at boot and as a fallback.
+  async function takePendingContext() {
+    try {
+      const got = await rawStorage.get(PENDING_CONTEXT_KEY);
+      const ctx = got[PENDING_CONTEXT_KEY];
+      if (!ctx) return null;
+      if (!ctx.text && (!ctx.images || ctx.images.length === 0)) return null;
+      // If background tagged a specific targetTabId, only that tab consumes.
+      if (ctx.targetTabId != null) {
+        let myTab = null;
+        try { myTab = await chrome.tabs.getCurrent(); } catch {}
+        if (myTab && myTab.id !== ctx.targetTabId) return null;
+      }
+      await rawStorage.remove(PENDING_CONTEXT_KEY);
+      return ctx;
+    } catch {
+      return null;
+    }
+  }
+
+  // storage.onChanged handles the existing-tab path: background writes the
+  // pending context and the focused NanoChat tab picks it up. (For freshly-
+  // created tabs, the change fires before our listener is registered, so we
+  // also do a one-shot read in the boot IIFE.)
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(async (changes, area) => {
+      if (area !== 'local') return;
+      const change = changes[PENDING_CONTEXT_KEY];
+      if (!change || !change.newValue) return;
+      const ctx = await takePendingContext();
+      if (ctx) consumePendingContext(ctx);
+    });
+  }
+
   function deriveTitle(msgs) {
     const first = msgs.find(m => m.role === 'user');
     if (!first || !first.text) return 'New chat';
@@ -455,16 +748,66 @@
     if (data.systemPrompt != null) systemEl.value = data.systemPrompt;
     if (data.temperature != null && !Number.isNaN(data.temperature)) tempEl.value = data.temperature;
     if (data.topK != null && !Number.isNaN(data.topK)) topKEl.value = data.topK;
-    // Repaint log.
-    logEl.innerHTML = '';
-    for (const m of currentMessages) {
-      const body = addMessage(m.role, '');
-      if (m.role === 'assistant') body.innerHTML = renderMarkdown(m.text);
-      else body.textContent = m.text;
-    }
+    clearPendingContext();
+    repaintLog();
     // Rebuild the in-memory LM session with the prior conversation so the model has context.
     await createSession({ replay: currentMessages });
     await renderSessionList();
+  }
+
+  function repaintLog() {
+    logEl.innerHTML = '';
+    currentMessages.forEach((m, i) => {
+      const body = addMessage(m.role, '', [], i);
+      if (m.role === 'assistant') body.innerHTML = renderMarkdown(m.text);
+      else body.textContent = m.text;
+    });
+  }
+
+  // Drop messages from `index` onward, repaint, and rebuild the LM session
+  // with the truncated history. Used by edit (user) and regenerate (assistant).
+  async function truncateMessagesFrom(index) {
+    currentMessages = currentMessages.slice(0, index);
+    repaintLog();
+    await createSession({ replay: currentMessages });
+    if (currentMessages.length > 0) {
+      saveCurrentSession();
+      return;
+    }
+    // Edited away the entire conversation — drop the persisted session in
+    // place (don't go through startNewChat: we want to keep the input value
+    // and not reset persisted options).
+    if (currentSessionId) {
+      const idx = await listSessions();
+      const next = idx.filter(s => s.id !== currentSessionId);
+      await storage.set({ [SESSIONS_INDEX_KEY]: next });
+      await storage.remove(SESSION_KEY_PREFIX + currentSessionId);
+      bodyCache = null;
+      currentSessionId = makeSessionId();
+      await renderSessionList();
+    }
+  }
+
+  async function editUserMessage(index) {
+    if (generating) return;
+    const m = currentMessages[index];
+    if (!m || m.role !== 'user') return;
+    inputEl.value = m.text;
+    await truncateMessagesFrom(index);
+    inputEl.focus();
+    // Caret to end so the user can immediately keep editing.
+    inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+  }
+
+  async function regenerateAssistant(index) {
+    if (generating) return;
+    const m = currentMessages[index];
+    if (!m || m.role !== 'assistant') return;
+    const prior = currentMessages[index - 1];
+    if (!prior || prior.role !== 'user') return;
+    const userText = prior.text;
+    await truncateMessagesFrom(index - 1);
+    dispatchPrompt({ text: userText });
   }
 
   async function deleteSession(id) {
@@ -480,15 +823,20 @@
     }
   }
 
-  async function startNewChat() {
+  async function startNewChat({ keepContext = false, forceMultimodal = false } = {}) {
     if (generating) return;
     // Restore the user's saved defaults — overrides any session-specific values
     // (e.g. system prompt, temp, topK) left over from a previously loaded chat.
     storedOptions = await loadOptions();
     applyStoredOptions(storedOptions);
+    // forceMultimodal: applied *after* applyStoredOptions so it overrides the
+    // user's saved preference for this one session (when an image-bearing
+    // context arrives, we need a multimodal session to ingest the images).
+    if (forceMultimodal && !multimodalEl.checked) multimodalEl.checked = true;
     currentSessionId = makeSessionId();
     currentMessages = [];
     logEl.innerHTML = '';
+    if (!keepContext) clearPendingContext();
     await createSession();
     await renderSessionList();
   }
@@ -646,9 +994,10 @@
     if (e.key === 'Escape') { searchEl.value = ''; searchQuery = ''; renderSessionList(); }
   });
 
-  function addMessage(role, text, imgs = []) {
+  function addMessage(role, text, imgs = [], index = null) {
     const div = document.createElement('div');
     div.className = `msg ${role}`;
+    if (index != null) div.dataset.index = String(index);
     const roleLabel = document.createElement('div');
     roleLabel.className = 'role';
     roleLabel.textContent = role;
@@ -659,6 +1008,30 @@
       const img = document.createElement('img');
       img.src = url;
       div.append(img);
+    }
+    // Per-message actions (edit user / regenerate assistant). Errors and the
+    // streaming-in-progress assistant bubble pass index=null and get no actions.
+    if (index != null && (role === 'user' || role === 'assistant')) {
+      const actions = document.createElement('div');
+      actions.className = 'msg-actions';
+      if (role === 'user') {
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'msg-action';
+        editBtn.title = 'Edit and resend (drops everything below)';
+        editBtn.textContent = '✎ Edit';
+        editBtn.addEventListener('click', () => editUserMessage(Number(div.dataset.index)));
+        actions.append(editBtn);
+      } else {
+        const regenBtn = document.createElement('button');
+        regenBtn.type = 'button';
+        regenBtn.className = 'msg-action';
+        regenBtn.title = 'Regenerate this reply (drops it and any following turns)';
+        regenBtn.textContent = '↻ Regenerate';
+        regenBtn.addEventListener('click', () => regenerateAssistant(Number(div.dataset.index)));
+        actions.append(regenBtn);
+      }
+      div.append(actions);
     }
     logEl.append(div);
     logEl.scrollTop = logEl.scrollHeight;
@@ -825,30 +1198,40 @@
     }
   }
 
-  async function send() {
-    if (generating) { chatAbort && chatAbort.abort(); return; }
+  // Dispatch a prompt to the model. Used by send() (user input) and
+  // regenerateAssistant() (re-run a prior user turn without re-typing).
+  // `images`/`audio` only flow from send() — they're not persisted, so a
+  // regenerate after reload only has access to the text turn.
+  async function dispatchPrompt({ text, images = [], audio = [] }) {
     if (!session) return;
-    const text = inputEl.value.trim();
-    if (!text && attachedImages.length === 0 && attachedAudio.length === 0) return;
-    inputEl.value = '';
+    if (!text && images.length === 0 && audio.length === 0) return;
 
-    const imgUrls = attachedImages.map(a => a.url);
-    const audioNames = attachedAudio.map(a => `🔊 ${a.name}`).join(' ');
-    const userDisplay = audioNames ? (text ? text + '\n' + audioNames : audioNames) : text;
-    addMessage('user', userDisplay, imgUrls);
-    // Persist only the text portion (blobs aren't saved).
+    // Fold a pending right-click context into the *persisted* user message so
+    // the chat is self-contained (regenerate / reload still sees it).
+    let effectiveText = text;
+    if (pendingContext && pendingContext.text) {
+      effectiveText = buildContextPrefix(pendingContext) + (text || '');
+      clearPendingContext();
+    }
+
+    const imgUrls = images.map(a => a.url);
+    const audioNames = audio.map(a => `🔊 ${a.name}`).join(' ');
+    const userDisplay = audioNames ? (effectiveText ? effectiveText + '\n' + audioNames : audioNames) : effectiveText;
+
     if (!currentSessionId) currentSessionId = makeSessionId();
-    if (text) currentMessages.push({ role: 'user', text });
+    const userIndex = effectiveText ? currentMessages.length : null;
+    addMessage('user', userDisplay, imgUrls, userIndex);
+    if (effectiveText) currentMessages.push({ role: 'user', text: effectiveText });
 
     let messageContent;
-    if (attachedImages.length > 0 || attachedAudio.length > 0) {
+    if (images.length > 0 || audio.length > 0) {
       const parts = [];
-      if (text) parts.push({ type: 'text', value: text });
-      for (const a of attachedImages) parts.push({ type: 'image', value: a.blob });
-      for (const a of attachedAudio) parts.push({ type: 'audio', value: a.blob });
+      if (effectiveText) parts.push({ type: 'text', value: effectiveText });
+      for (const a of images) parts.push({ type: 'image', value: a.blob });
+      for (const a of audio) parts.push({ type: 'audio', value: a.blob });
       messageContent = [{ role: 'user', content: parts }];
     } else {
-      messageContent = text;
+      messageContent = effectiveText;
     }
 
     const callOpts = {};
@@ -861,7 +1244,9 @@
       }
     }
 
-    const out = addMessage('assistant', '');
+    // Assistant index = where the assistant turn will land after the upcoming push.
+    const assistantIndex = currentMessages.length;
+    const out = addMessage('assistant', '', [], assistantIndex);
     let raw = '';
     generating = true;
     chatAbort = new AbortController();
@@ -877,12 +1262,11 @@
         logEl.scrollTop = logEl.scrollHeight;
       }
       // Clear attachments after a successful send (they're now in conversation history).
-      for (const a of attachedImages) URL.revokeObjectURL(a.url);
-      attachedImages = [];
-      attachedAudio = [];
+      for (const a of images) URL.revokeObjectURL(a.url);
+      if (images === attachedImages) attachedImages = [];
+      if (audio === attachedAudio) attachedAudio = [];
       renderImgPreview();
       renderAudioPreview();
-      // Record the assistant turn and persist to storage.
       if (raw) currentMessages.push({ role: 'assistant', text: raw });
       saveCurrentSession();
     } catch (e) {
@@ -890,6 +1274,10 @@
       out.parentElement.classList.remove('assistant');
       out.parentElement.classList.add('error');
       out.textContent = aborted ? '(stopped)' : `error: ${e.message}`;
+      // Aborted/errored assistant bubble was never pushed to currentMessages;
+      // strip the dataset.index so it can't be regenerated by accident.
+      delete out.parentElement.dataset.index;
+      out.parentElement.querySelector('.msg-actions')?.remove();
     } finally {
       generating = false;
       chatAbort = null;
@@ -897,6 +1285,15 @@
       sendBtn.classList.remove('stop');
       updateUsage();
     }
+  }
+
+  async function send() {
+    if (generating) { chatAbort && chatAbort.abort(); return; }
+    if (!session) return;
+    const text = inputEl.value.trim();
+    if (!text && attachedImages.length === 0 && attachedAudio.length === 0 && !pendingContext) return;
+    inputEl.value = '';
+    await dispatchPrompt({ text, images: attachedImages, audio: attachedAudio });
   }
 
   sendBtn.addEventListener('click', send);
@@ -908,12 +1305,32 @@
   [tempEl, topKEl, multimodalEl].forEach(el => el.addEventListener('change', () => createSession()));
 
   // Load and apply saved option defaults before initPrompt runs (so it won't overwrite them).
+  // Migration runs first so any pre-encryption plaintext is rewritten as ciphertext
+  // before the first read.
   (async () => {
+    await migrateToEncrypted();
     storedOptions = await loadOptions();
     applyStoredOptions(storedOptions);
     wireOptionPersistence();
-    initPrompt();
+
+    // Take any pending right-click/popup context BEFORE initPrompt so we can
+    // render the card + prefill immediately, and so initPrompt's create()
+    // opens a session with the correct (multimodal-aware) options. Without
+    // this, the context sat behind a slow LanguageModel.create() and the user
+    // saw a blank NanoChat tab.
+    const pending = await takePendingContext();
+    if (pending) {
+      const hasImages = !!(pending.images && pending.images.length > 0);
+      if (hasImages && !multimodalEl.checked) multimodalEl.checked = true;
+      pendingContext = pending;
+      if (pending.prefill) inputEl.value = pending.prefill;
+      renderContextCard();
+    }
+
+    await initPrompt();
     renderSessionList();
+
+    if (pending) await consumePendingContext(pending, { skipNewChat: true });
   })();
 
   // ---------- Shared probe ----------
