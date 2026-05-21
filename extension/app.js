@@ -1117,10 +1117,10 @@
   const usagePctEl = $('usage-pct');
   function updateUsage() {
     if (!session) return;
-    // Newer property names: contextUsage / contextWindow.
-    // Older Chrome exposes inputUsage / inputQuota. Fall back gracefully.
-    const used = session.inputUsage ?? session.contextUsage ?? 0;
-    const quota = session.inputQuota ?? session.contextWindow ?? 0;
+    // Prefer the newer contextUsage / contextWindow; inputUsage / inputQuota
+    // are deprecated aliases kept only in older Chrome builds.
+    const used = session.contextUsage ?? session.inputUsage ?? 0;
+    const quota = session.contextWindow ?? session.inputQuota ?? 0;
     usageEl.textContent = `tokens: ${used} / ${quota}`;
     const pct = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
     usageBarEl.style.width = pct.toFixed(1) + '%';
